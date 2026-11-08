@@ -114,40 +114,62 @@
       onSave={save} onCancel={() => (editing = null)} />
   {/if}
 
-  {#each shares as sh (sh.name)}
-    <article class="card volume">
-      <div class="volume-head">
-        <h2>{sh.name}</h2>
-        {#if !sh.available}<span class="badge bad">volume not mounted</span>{/if}
-        {#if sh.timeMachine}<span class="badge neutral">Time Machine</span>{/if}
-        {#if sh.recycleBin}<span class="badge neutral">Recycle bin</span>{/if}
-        {#if !sh.smbDisabled}<span class="badge info">SMB</span>{/if}
-        {#if sh.rsyncRead}<span class="badge info">rsync</span>{/if}
-        {#if !sh.smbDisabled && sh.hidden}<span class="badge neutral">Not listed</span>{/if}
-        <span class="spacer"></span>
-        <button class="secondary" onclick={() => (editing = sh)} disabled={!!editing}>Edit</button>
-        <button class="secondary danger-text" onclick={() => askDelete(sh)}>Delete</button>
-      </div>
-      {#if sh.description}<p class="muted">{sh.description}</p>{/if}
-      <dl class="share-info">
-        <dt>Access</dt><dd>{who(sh)}</dd>
-        <dt>Folder</dt><dd class="mono">{sh.path}</dd>
-        {#if !sh.smbDisabled}
-          <dt>Windows</dt><dd class="mono">\\{hostname}\{sh.name}</dd>
-          <dt>Mac / Linux</dt><dd class="mono">smb://{hostname}.local/{sh.name}</dd>
-        {/if}
-        {#if sh.rsyncRead}<dt>rsync</dt><dd class="mono">rsync://{hostname}.local/{sh.name}/{settings.rsyncEnabled ? '' : ' (rsync is off)'}</dd>{/if}
-        {#if sh.allowedHosts?.length}<dt>Only from</dt><dd class="mono">{sh.allowedHosts.join(', ')}</dd>{/if}
-      </dl>
-    </article>
-  {:else}
-    {#if loaded && !editing}
-      <div class="card empty">
-        <p><strong>No shares yet.</strong></p>
-        <p class="muted">A share is a folder on a volume that computers on your network can open, like a network drive.</p>
-      </div>
-    {/if}
-  {/each}
+  {#if shares.length}
+    <div class="card table-card">
+      <table class="members shares-table">
+        <thead>
+          <tr><th>Share</th><th>Volume</th><th>Access</th><th>Services</th><th>Options</th><th></th></tr>
+        </thead>
+        <tbody>
+          {#each shares as sh (sh.name)}
+            <tr>
+              <td>
+                <strong>{sh.name}</strong>
+                {#if !sh.available}<span class="badge bad">not mounted</span>{/if}
+                {#if sh.description}<div class="muted small">{sh.description}</div>{/if}
+                <div class="addresses">
+                  {#if !sh.smbDisabled}
+                    <span class="mono small" title="Windows">\\{hostname}\{sh.name}</span>
+                    <span class="mono small" title="Mac / Linux">smb://{hostname}.local/{sh.name}</span>
+                  {/if}
+                  {#if sh.rsyncRead}<span class="mono small" title="rsync">rsync://{hostname}.local/{sh.name}/</span>{/if}
+                </div>
+              </td>
+              <td class="small">{sh.volume}</td>
+              <td class="small">
+                {who(sh)}
+                {#if sh.allowedHosts?.length}<div class="muted">only from {sh.allowedHosts.join(', ')}</div>{/if}
+              </td>
+              <td>
+                <div class="badges">
+                  {#if !sh.smbDisabled}<span class="badge info" class:off={settings.smbDisabled} title={settings.smbDisabled ? 'SMB service is off' : ''}>SMB</span>{/if}
+                  {#if sh.rsyncRead}<span class="badge info" class:off={!settings.rsyncEnabled} title={settings.rsyncEnabled ? '' : 'rsync service is off'}>rsync</span>{/if}
+                  {#if sh.smbDisabled && !sh.rsyncRead}<span class="muted small">none</span>{/if}
+                </div>
+              </td>
+              <td>
+                <div class="badges">
+                  {#if !sh.smbDisabled && sh.hidden}<span class="badge neutral">Not listed</span>{/if}
+                  {#if sh.timeMachine}<span class="badge neutral">Time Machine</span>{/if}
+                  {#if sh.recycleBin}<span class="badge neutral">Recycle bin</span>{/if}
+                  {#if sh.guestRead}<span class="badge neutral">Guests</span>{/if}
+                </div>
+              </td>
+              <td class="right row-actions">
+                <button class="link" onclick={() => (editing = sh)} disabled={!!editing}>Edit</button>
+                <button class="link danger-text" onclick={() => askDelete(sh)}>Delete</button>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  {:else if loaded && !editing}
+    <div class="card empty">
+      <p><strong>No shares yet.</strong></p>
+      <p class="muted">A share is a folder on a volume that computers on your network can open, like a network drive.</p>
+    </div>
+  {/if}
 </main>
 
 {#if dialog}

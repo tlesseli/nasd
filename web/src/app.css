@@ -202,3 +202,16 @@ label.inline { flex-direction: row; align-items: center; gap: 0.4rem; font-weigh
   .row-actions { white-space: normal; }
 }
 label.check.sub, .row.sub { padding-left: 1.6rem; }
+.table-card { padding: 0.5rem 1rem; overflow-x: auto; }
+.shares-table td { vertical-align: top; }
+.shares-table .addresses { display: flex; flex-direction: column; gap: 0.1rem; margin-top: 0.3rem; color: var(--muted); }
+.shares-table .addresses span { user-select: all; }
+.badges { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.badge.off { opacity: 0.45; text-decoration: line-through; }
+@media (max-width: 760px) {
+  .shares-table th:nth-child(2), .shares-table td:nth-child(2),
+  .shares-table th:nth-child(5), .shares-table td:nth-child(5) { display: none; }
+}
+@media (max-width: 520px) {
+  .shares-table th:nth-child(3), .shares-table td:nth-child(3) { display: none; }
+}
