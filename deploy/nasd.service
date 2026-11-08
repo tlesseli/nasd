@@ -1,0 +1,18 @@
+[Unit]
+Description=NAS management daemon (web UI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/nasd -listen :8443 -data /var/lib/nasd
+Restart=on-failure
+RestartSec=2
+# Runs as root (needs mdadm, smartctl, samba). Limit what else it can touch:
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+StateDirectory=nasd
+StateDirectoryMode=0700
+
+[Install]
+WantedBy=multi-user.target
