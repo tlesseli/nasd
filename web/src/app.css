@@ -192,3 +192,12 @@ label.inline { flex-direction: row; align-items: center; gap: 0.4rem; font-weigh
 @media (prefers-reduced-motion: reduce) { .blink { animation: none; } }
 .order { margin: 0; padding-left: 1.4rem; font-size: 0.9rem; }
 .order .link { padding: 0 0.3rem; }
+.users-table td { vertical-align: top; }
+.row-actions { white-space: nowrap; }
+.row-actions .link { padding: 0 0.4rem; }
+.usage-line { display: flex; flex-direction: column; gap: 0.2rem; margin-bottom: 0.3rem; min-width: 7rem; }
+.quota-volumes { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.9rem; }
+@media (max-width: 600px) {
+  .users-table th:nth-child(2), .users-table td:nth-child(2) { display: none; }
+  .row-actions { white-space: normal; }
+}

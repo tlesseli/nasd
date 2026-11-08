@@ -3,6 +3,7 @@
   import { api } from '../api.js'
   import ShareForm from './ShareForm.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
+  import HomeFolders from './HomeFolders.svelte'
 
   let { hostname, onSessionLost } = $props()
 
@@ -103,6 +104,7 @@
         <span><strong>rsync</strong> <span class="muted small">· lets another machine back up shares that have "rsync access" (read only)</span></span>
       </label>
     </div>
+    {#if loaded}<HomeFolders />{/if}
   </div>
 
   {#if editing}
