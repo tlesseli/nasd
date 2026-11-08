@@ -167,7 +167,9 @@ func (s *Server) formatUSB(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.startJob(w, fmt.Sprintf("Format USB disk %s (%s)", disk, req.FSType), time.Hour, func(ctx context.Context, j *jobs.Job) error {
-		return s.Backups.FormatUSB(ctx, j.Run, disk, req.FSType, req.Label)
+		err := s.Backups.FormatUSB(ctx, j.Run, disk, req.FSType, req.Label)
+		s.Backups.ForgetNewUSB(ctx) // a freshly formatted disk is not one to copy
+		return err
 	})
 }
 

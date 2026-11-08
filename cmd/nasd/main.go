@@ -70,6 +70,16 @@ func main() {
 		return m, nil
 	}
 	shr := shares.NewService(st, mounted)
+	shr.QuotaMounts = func(ctx context.Context) ([]string, error) {
+		list, err := vols.List(ctx)
+		var out []string
+		for _, v := range list {
+			if v.Quotas {
+				out = append(out, v.Mountpoint)
+			}
+		}
+		return out, err
+	}
 	// Make smb.conf match state.json (e.g. after an update or a manual edit).
 	if err := shr.Apply(context.Background()); err != nil {
 		log.Printf("warning: applying Samba config: %v", err)
@@ -119,6 +129,7 @@ func main() {
 	go bk.RunScheduler(ctx)
 	go mon.Run(ctx)
 	go pw.RunTimer(ctx)
+	go bk.RunUSBWatcher(ctx)
 	go func() {
 		// Spin-down and Wake-on-LAN don't survive a reboot: apply them again.
 		if err := pw.Apply(ctx); err != nil {

@@ -56,6 +56,21 @@ func renderSmbConf(st store.State) string {
    max log size = 1000
 `)
 
+	if h := st.Settings.HomeShares; h.Enabled && h.Path != "" {
+		// [homes] is special in Samba: when "alice" connects, a share named
+		// "alice" appears, pointing at her folder (%S = the share name).
+		b.WriteString(`
+[homes]
+   comment = Home folder of %S
+   path = ` + h.Path + `/%S
+   browseable = no
+   read only = no
+   valid users = %S
+   create mask = 0600
+   directory mask = 0700
+   vfs objects = fruit streams_xattr
+`)
+	}
 	for _, sh := range st.Shares {
 		b.WriteString("\n")
 		writeShare(&b, sh)
@@ -84,7 +99,8 @@ func writeShare(b *strings.Builder, sh store.Share) {
 	if sh.Description != "" {
 		line("comment", sh.Description)
 	}
-	line("browseable", "yes")
+	// Hidden: not listed when browsing the NAS, but \\nas\name still works.
+	line("browseable", map[bool]string{false: "yes", true: "no"}[sh.Hidden])
 	if len(sh.AllowedHosts) > 0 {
 		// Narrows the global LAN-only rule for this share.
 		line("hosts allow", strings.Join(sh.AllowedHosts, " "))

@@ -172,7 +172,7 @@ func TestCreateCommands(t *testing.T) {
 		// smallest disk is 2 GiB = 2048 MiB, minus the 64 MiB margin
 		"parted -s /dev/sdc -- mklabel gpt mkpart nas 1MiB 1984MiB set 1 raid on",
 		"mdadm --create /dev/md/media --run --metadata=1.2 --name=media --level=raid5 --raid-devices=3 /dev/sda1 /dev/sdb1 /dev/sdc1",
-		"mkfs.ext4 -F -q -m 0 -L media /dev/md/media",
+		"mkfs.ext4 -F -q -m 0 -O quota -E quotatype=usrquota -L media /dev/md/media",
 		"systemd-escape --path --suffix=mount " + filepath.Join(s.MountRoot, "media"),
 		"systemctl start data-media.mount",
 		"update-initramfs -u",
@@ -280,5 +280,20 @@ func TestExpandWithSpare(t *testing.T) {
 	}
 	if strings.Contains(all, "--add") || strings.Contains(all, "parted") {
 		t.Errorf("expanding with the existing spare must not partition or add a disk:\n%s", all)
+	}
+}
+
+func TestRepquotaAndMountOptions(t *testing.T) {
+	q := parseRepquota("User,BlockStatus,FileStatus,BlockUsed,BlockSoftLimit,BlockHardLimit,BlockGrace,FileUsed,FileSoftLimit,FileHardLimit,FileGrace\nroot,ok,ok,13,0,0,,2,0,0,\nalice,hard,ok,20480,0,10240,,1,0,0,\n")
+	if len(q) != 2 || q[1] != (QuotaUse{User: "alice", UsedKB: 20480, LimitKB: 10240}) {
+		t.Errorf("%+v", q)
+	}
+	mounts := filepath.Join(t.TempDir(), "mounts")
+	os.WriteFile(mounts, []byte("/dev/md127 /data/media ext4 rw,relatime,quota,usrquota 0 0\n/dev/md126 /data/other ext4 rw,relatime 0 0\n"), 0o644)
+	if !mountHasOption(mounts, "/data/media", "usrquota") || mountHasOption(mounts, "/data/other", "usrquota") {
+		t.Error("mount option detection")
+	}
+	if l := fstabLine("u", "/data/x", "ext4"); !strings.Contains(l, ",usrquota 0 2") {
+		t.Errorf("ext4 fstab line must enforce quotas: %s", l)
 	}
 }

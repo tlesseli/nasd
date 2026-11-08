@@ -41,12 +41,15 @@ type Service struct {
 	mu        sync.Mutex
 	lastFired map[int]time.Time // scheduler: job id -> minute it was last triggered
 	pending   map[int]time.Time // scheduler: due jobs waiting for the NAS to be free
+
+	usbSeen    map[string]USBVolume // USB filesystems plugged at the last look
+	usbPending map[string]time.Time // new USB disks waiting to be copied
 }
 
 func NewService(st *store.Store, jm *jobs.Manager, dataDir string) *Service {
 	return &Service{
 		Store: st, Jobs: jm, Run: run.Exec, DataDir: dataDir, MountBase: "/run/nasd/usb", Now: time.Now,
-		lastFired: map[int]time.Time{}, pending: map[int]time.Time{},
+		lastFired: map[int]time.Time{}, pending: map[int]time.Time{}, usbPending: map[string]time.Time{},
 	}
 }
 

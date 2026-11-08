@@ -117,6 +117,7 @@
         {#if !sh.available}<span class="badge bad">volume not mounted</span>{/if}
         {#if sh.timeMachine}<span class="badge neutral">Time Machine</span>{/if}
         {#if sh.recycleBin}<span class="badge neutral">Recycle bin</span>{/if}
+        {#if sh.hidden}<span class="badge neutral">Hidden</span>{/if}
         <span class="spacer"></span>
         <button class="secondary" onclick={() => (editing = sh)} disabled={!!editing}>Edit</button>
         <button class="secondary danger-text" onclick={() => askDelete(sh)}>Delete</button>

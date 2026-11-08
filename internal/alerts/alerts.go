@@ -49,6 +49,8 @@ var Kinds = []Kind{
 	{"resolved", "A problem was resolved", "info", false},
 	{"raid_rebuilt", "A volume finished rebuilding", "info", false},
 	{"scrub_done", "A volume check finished", "info", false},
+	{"usb_copy", "A USB disk was copied", "info", false},
+	{"quota", "A user is near or at their quota", "warning", false},
 	{"system_started", "The NAS started", "info", false},
 	{"power_schedule", "Scheduled power off", "info", false},
 	{"power_action", "Restart or shutdown requested", "info", false},

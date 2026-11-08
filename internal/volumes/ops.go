@@ -114,7 +114,9 @@ func (s *Service) Create(ctx context.Context, r run.Func, req CreateRequest, sel
 	switch req.Filesystem {
 	case "ext4":
 		// -m 0: no blocks reserved for root, it's a data volume.
-		if _, err := r(ctx, "mkfs.ext4", "-F", "-q", "-m", "0", "-L", req.Name, md); err != nil {
+		// -O quota: per-user quotas ready from the start (enforced via the
+		// usrquota mount option in fstab).
+		if _, err := r(ctx, "mkfs.ext4", "-F", "-q", "-m", "0", "-O", "quota", "-E", "quotatype=usrquota", "-L", req.Name, md); err != nil {
 			return err
 		}
 	case "btrfs":
@@ -459,11 +461,13 @@ func (s *Service) EraseDisk(ctx context.Context, r run.Func, d disks.Disk) error
 // a dead array drops the NAS into an emergency shell you can't reach without
 // a screen). Mounted by filesystem UUID, which never changes, unlike md127.
 func fstabLine(uuid, mnt, fs string) string {
-	pass := 2 // fsck at boot for ext4; btrfs checks itself
+	pass, opts := 2, "defaults,nofail,x-systemd.device-timeout=30s" // fsck at boot for ext4
 	if fs == "btrfs" {
-		pass = 0
+		pass = 0 // btrfs checks itself
+	} else {
+		opts += ",usrquota" // enforce per-user quotas
 	}
-	return fmt.Sprintf("UUID=%s %s %s defaults,nofail,x-systemd.device-timeout=30s 0 %d", uuid, mnt, fs, pass)
+	return fmt.Sprintf("UUID=%s %s %s %s 0 %d", uuid, mnt, fs, opts, pass)
 }
 
 // setFstab replaces (or removes, if line is "") the entry nasd owns for a

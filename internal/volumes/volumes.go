@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -64,6 +65,7 @@ type Volume struct {
 	// Result of the last consistency check (see maintenance.go).
 	LastSyncAction string `json:"lastSyncAction"` // check, repair, resync, recover...
 	MismatchCount  int64  `json:"mismatchCount"`  // blocks that didn't match their parity/mirror
+	Quotas         bool   `json:"quotas"`         // per-user quotas enforced (ext4 mounted with usrquota)
 }
 
 // Level describes a RAID level: minimum disks, usable capacity (in number
@@ -96,11 +98,13 @@ type Service struct {
 	MountRoot    string // "/data"
 	Run          run.Func
 	SkipStatfs   bool          // tests
+	ProcMounts   string        // /proc/self/mounts ("" in tests)
 	PollInterval time.Duration // tests; default 5 s
 }
 
 func NewService(r run.Func) *Service {
-	return &Service{Sys: "/sys", Fstab: "/etc/fstab", MdadmConf: "/etc/mdadm/mdadm.conf", MountRoot: "/data", Run: r}
+	return &Service{Sys: "/sys", Fstab: "/etc/fstab", MdadmConf: "/etc/mdadm/mdadm.conf", MountRoot: "/data", Run: r,
+		ProcMounts: "/proc/self/mounts"}
 }
 
 // ---------------------------------------------------------------- reading
@@ -260,6 +264,9 @@ func (s *Service) fillNameAndFS(ctx context.Context, v *Volume) {
 			break
 		}
 	}
+	if v.Mountpoint != "" && s.ProcMounts != "" {
+		v.Quotas = mountHasOption(s.ProcMounts, v.Mountpoint, "usrquota")
+	}
 	if v.Mountpoint != "" && !s.SkipStatfs {
 		var st syscall.Statfs_t
 		if syscall.Statfs(v.Mountpoint, &st) == nil {
@@ -271,6 +278,18 @@ func (s *Service) fillNameAndFS(ctx context.Context, v *Volume) {
 			v.CanGrowFS = v.Sync == nil && v.TotalBytes > 0 && float64(v.TotalBytes) < 0.9*float64(v.SizeBytes)
 		}
 	}
+}
+
+// mountHasOption reads the kernel's mount table: "dev mountpoint fstype opts ...".
+func mountHasOption(procMounts, mountpoint, opt string) bool {
+	data, _ := os.ReadFile(procMounts)
+	for _, line := range strings.Split(string(data), "\n") {
+		f := strings.Fields(line)
+		if len(f) >= 4 && f[1] == mountpoint {
+			return slices.Contains(strings.Split(f[3], ","), opt)
+		}
+	}
+	return false
 }
 
 func parseExport(s string) map[string]string {

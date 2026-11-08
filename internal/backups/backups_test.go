@@ -221,3 +221,44 @@ func TestSchedulerWaitsWhenBusy(t *testing.T) {
 		t.Errorf("backup ran %d times, want 1", runs)
 	}
 }
+
+func TestUSBCopyOnConnection(t *testing.T) {
+	s, f, share := newTestService(t)
+	var notes []string
+	s.Notify = func(k, subj, b string) { notes = append(notes, k+": "+subj) }
+	ctx := context.Background()
+	// The test lsblk always shows ABCD-1234 (label BACKUP). First look: it was
+	// plugged before we started, so it's not copied.
+	s.SaveUSBCopy(store.USBCopy{Enabled: true, Share: "Photos", Path: "Imports", Owner: ""})
+	s.usbTick(ctx)
+	s.Jobs.Wait()
+	if strings.Contains(f.all(), "rsync") {
+		t.Fatal("a disk present at startup must not be copied")
+	}
+	// Simulate unplug + replug.
+	s.usbSeen = map[string]USBVolume{}
+	s.usbTick(ctx)
+	s.Jobs.Wait()
+	all := f.all()
+	for _, want := range []string{"mount -o ro /dev/sde1 ", "install -d -m 2775 -g nasusers " + share + "/Imports",
+		"--chown=root:nasusers", share + "/Imports/"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("missing %q in:\n%s", want, all)
+		}
+	}
+	if len(notes) != 1 || !strings.Contains(notes[0], "usb_copy: USB disk BACKUP copied") {
+		t.Errorf("notes: %v", notes)
+	}
+	// A backup disk is never copied.
+	f.cmds = nil
+	s.Save(store.BackupJob{Name: "B", Direction: "push", Share: "Photos", Target: store.BackupTarget{Kind: "usb", USBUUID: "ABCD-1234"}})
+	s.usbSeen = map[string]USBVolume{}
+	s.usbTick(ctx)
+	s.Jobs.Wait()
+	if strings.Contains(f.all(), "rsync") {
+		t.Error("a USB disk used by a backup job must not be copied into a share")
+	}
+	if err := s.SaveUSBCopy(store.USBCopy{Enabled: true, Share: "Photos", Path: "../etc"}); err == nil {
+		t.Error("'..' must be refused")
+	}
+}

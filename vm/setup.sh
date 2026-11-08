@@ -54,6 +54,7 @@ packages:
   - hdparm         # disk spin-down
   - nut-server     # UPS support (Network UPS Tools)
   - nut-client
+  - quota          # disk quotas (setquota, repquota)
   # The cloud kernel has no USB storage drivers: use Debian's standard
   # kernel, the same one the real ReadyNAS will run.
   - linux-image-amd64

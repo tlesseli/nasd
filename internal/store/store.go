@@ -24,6 +24,7 @@ type User struct {
 	Name         string `json:"name"`
 	PasswordHash string `json:"passwordHash"`
 	Admin        bool   `json:"admin"`
+	QuotaMB      int    `json:"quotaMB"` // max space per volume (ext4 with quotas); 0 = unlimited
 }
 
 // Share is a folder on a volume, exported over SMB.
@@ -38,6 +39,7 @@ type Share struct {
 	RecycleBin  bool              `json:"recycleBin"`
 	TimeMachine bool              `json:"timeMachine"`
 	RsyncRead   bool              `json:"rsyncRead"` // readable by the rsync service (for backups by another machine)
+	Hidden      bool              `json:"hidden"`    // works, but not listed when browsing the NAS
 	// AllowedHosts restricts SMB and rsync access to these IPs / networks
 	// (empty = the whole LAN).
 	AllowedHosts []string `json:"allowedHosts"`
@@ -47,8 +49,25 @@ type Share struct {
 // an older state.json reads as false, so the safe default (SMB on) must be
 // the zero value.
 type Settings struct {
-	SMBDisabled  bool `json:"smbDisabled"`
-	RsyncEnabled bool `json:"rsyncEnabled"`
+	SMBDisabled  bool       `json:"smbDisabled"`
+	RsyncEnabled bool       `json:"rsyncEnabled"`
+	HomeShares   HomeShares `json:"homeShares"`
+	USBCopy      USBCopy    `json:"usbCopy"`
+}
+
+// HomeShares gives every user a private share named after them.
+type HomeShares struct {
+	Enabled bool   `json:"enabled"`
+	Volume  string `json:"volume"`
+	Path    string `json:"path"` // /data/<volume>/homes
+}
+
+// USBCopy copies the content of USB disks into a share when plugged in.
+type USBCopy struct {
+	Enabled bool   `json:"enabled"`
+	Share   string `json:"share"`
+	Path    string `json:"path"`  // sub-folder in the share
+	Owner   string `json:"owner"` // user owning the copied files ("" = shared)
 }
 
 // BackupJob copies a share to or from somewhere else with rsync.

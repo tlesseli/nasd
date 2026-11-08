@@ -58,8 +58,10 @@ func newTestService(t *testing.T) (*Service, *fakeSystem, string) {
 		Mounted: func(context.Context) (map[string]string, error) {
 			return map[string]string{"media": vol}, nil
 		},
-		Chown:   func(string, int, int) error { return nil },
-		GroupID: func(string) (int, error) { return 1001, nil },
+		Chown:       func(string, int, int) error { return nil },
+		GroupID:     func(string) (int, error) { return 1001, nil },
+		UserID:      func(string) (int, error) { return 1002, nil },
+		QuotaMounts: func(context.Context) ([]string, error) { return []string{vol}, nil },
 	}
 	return s, f, vol
 }
@@ -247,5 +249,56 @@ func TestRsyncAndHosts(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(s.AvahiDir, "nasd-smb.service")); err == nil {
 		t.Error("the Bonjour announcement must be removed when SMB is off")
+	}
+}
+
+func TestHomesQuotaHidden(t *testing.T) {
+	s, f, vol := newTestService(t)
+	ctx := context.Background()
+	s.CreateUser(ctx, "alice", "secret-password")
+	if err := s.SetHomeShares(ctx, true, "media"); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(filepath.Join(vol, "homes", "alice"))
+	if err != nil || fi.Mode().Perm() != 0o700 {
+		t.Fatalf("home folder: %v %v", fi, err)
+	}
+	s.CreateUser(ctx, "bob", "secret-password") // created after: gets a home too
+	if _, err := os.Stat(filepath.Join(vol, "homes", "bob")); err != nil {
+		t.Error("new users must get a home folder")
+	}
+	conf, _ := os.ReadFile(s.SmbConf)
+	if !strings.Contains(string(conf), "[homes]") || !strings.Contains(string(conf), "path = "+filepath.Join(vol, "homes")+"/%S") ||
+		!strings.Contains(string(conf), "valid users = %S") {
+		t.Errorf("smb.conf:\n%s", conf)
+	}
+	if on := s.OnVolume("media"); len(on) == 0 || on[0] != "home folders" {
+		t.Errorf("a volume holding home folders can't be deleted: %v", on)
+	}
+
+	if err := s.SetQuota(ctx, "alice", 500); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(f.cmds, "\n"), "setquota -u alice 0 512000 0 0 "+vol) {
+		t.Errorf("setquota missing:\n%s", strings.Join(f.cmds, "\n"))
+	}
+	if s.Users()[0].QuotaMB != 500 {
+		t.Error("quota not stored")
+	}
+
+	s.CreateShare(ctx, ShareRequest{Name: "Secret", Volume: "media", Access: map[string]string{"alice": "rw"}, Hidden: true})
+	conf, _ = os.ReadFile(s.SmbConf)
+	if !strings.Contains(section(string(conf), "Secret"), "browseable = no") {
+		t.Error("hidden share must not be browseable")
+	}
+	if err := s.SetHomeShares(ctx, false, ""); err != nil {
+		t.Fatal(err)
+	}
+	conf, _ = os.ReadFile(s.SmbConf)
+	if strings.Contains(string(conf), "[homes]") {
+		t.Error("[homes] must disappear when disabled")
+	}
+	if _, err := os.Stat(filepath.Join(vol, "homes", "alice")); err != nil {
+		t.Error("disabling home shares must keep the folders")
 	}
 }

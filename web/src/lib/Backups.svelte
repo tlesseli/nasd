@@ -17,6 +17,9 @@
   let job = $state(null) // running background job shown in the panel
   let dialog = $state(null)
   let formatting = $state(null) // {disk, fstype, label}
+  let usbCopy = $state(null)
+  let users = $state([])
+  let copyMsg = $state(null)
 
   async function refresh() {
     try {
@@ -30,6 +33,10 @@
 
   onMount(() => {
     refresh()
+    Promise.all([api.get('/api/usbcopy'), api.get('/api/users')]).then(([c, u]) => {
+      usbCopy = c
+      users = u
+    }).catch(() => {})
     api.get('/api/backups/key').then((r) => (publicKey = r.publicKey)).catch(() => {})
     api.get('/api/jobs').then((jobs) => {
       if (jobs[0]?.status === 'running') job = jobs[0]
@@ -78,6 +85,17 @@
         dialog = null
         formatting = null
       },
+    }
+  }
+
+  async function saveUSBCopy(event) {
+    event.preventDefault()
+    if (usbCopy.enabled && !usbCopy.share) usbCopy.share = shares[0]?.name ?? ''
+    try {
+      await api.post('/api/usbcopy', usbCopy)
+      copyMsg = { ok: true, text: 'Saved.' }
+    } catch (e) {
+      copyMsg = { ok: false, text: e.message }
     }
   }
 
@@ -152,6 +170,31 @@
       </div>
     {/if}
   {/each}
+
+  {#if usbCopy}
+    <h2>Copy USB disks when plugged in</h2>
+    <form class="card create" onsubmit={saveUSBCopy}>
+      <label class="check">
+        <input type="checkbox" bind:checked={usbCopy.enabled} />
+        <span><strong>Copy the content of a USB disk when it's plugged in</strong> <span class="muted small">· e.g. a camera card: photos land in a share without a computer. Each copy goes into a new dated folder; the USB disk is only read, never modified.</span></span>
+      </label>
+      {#if usbCopy.enabled}
+        <div class="two-cols">
+          <label>Into share
+            <select bind:value={usbCopy.share}>{#each shares as s (s.name)}<option>{s.name}</option>{/each}</select></label>
+          <label>Folder <span class="hint">(optional)</span> <input bind:value={usbCopy.path} placeholder="Imports" /></label>
+          <label>Files belong to
+            <select bind:value={usbCopy.owner}>
+              <option value="">Everyone with access to the share</option>
+              {#each users as u (u.name)}<option value={u.name}>{u.name}</option>{/each}
+            </select></label>
+        </div>
+        <p class="hint">USB disks used by a backup job are never copied.</p>
+      {/if}
+      {#if copyMsg}<p class={copyMsg.ok ? 'good-text small' : 'error small'}>{copyMsg.text}</p>{/if}
+      <div class="actions"><button type="submit">Save</button></div>
+    </form>
+  {/if}
 
   <h2>USB disks</h2>
   <div class="card list">

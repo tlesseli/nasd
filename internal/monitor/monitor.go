@@ -169,6 +169,10 @@ func (m *Monitor) checkVolume(ctx context.Context, v volumes.Volume, st store.St
 			fmt.Sprintf("Volume %s has %d MB free.", v.Name, v.AvailBytes>>20))
 	}
 
+	if v.Quotas {
+		m.checkQuotas(ctx, v, st, cond)
+	}
+
 	// React to the end of a sync operation (compare with the last tick).
 	prev, had := m.lastAction[v.Name]
 	cur := "idle"
@@ -221,6 +225,27 @@ func (m *Monitor) runSchedules(ctx context.Context, st store.State, vols []volum
 		}
 		log.Printf("scheduled check of %s started", v.Name)
 		m.lastAction[v.Name] = "check" // so the end is noticed even if the check is very short
+	}
+}
+
+func (m *Monitor) checkQuotas(ctx context.Context, v volumes.Volume, st store.State, cond func(string, string, string, string)) {
+	usage, err := m.Volumes.QuotaUsage(ctx, v)
+	if err != nil {
+		return
+	}
+	for _, q := range usage {
+		if u := st.FindUser(q.User); q.LimitKB == 0 || u == nil {
+			continue
+		}
+		pct := q.UsedKB * 100 / q.LimitKB
+		switch {
+		case q.UsedKB >= q.LimitKB:
+			cond("quota_full:"+v.Name+":"+q.User, "quota", fmt.Sprintf("%s reached their quota on %s", q.User, v.Name),
+				fmt.Sprintf("%s uses %d MB of their %d MB on volume %s and can't save more files there.", q.User, q.UsedKB>>10, q.LimitKB>>10, v.Name))
+		case pct >= 90:
+			cond("quota_near:"+v.Name+":"+q.User, "quota", fmt.Sprintf("%s is at %d%% of their quota on %s", q.User, pct, v.Name),
+				fmt.Sprintf("%s uses %d MB of their %d MB on volume %s.", q.User, q.UsedKB>>10, q.LimitKB>>10, v.Name))
+		}
 	}
 }
 

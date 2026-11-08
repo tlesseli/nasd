@@ -81,6 +81,7 @@ func (s *Server) Handler() http.Handler {
 	s.backupRoutes(mux)
 	s.healthRoutes(mux)
 	s.systemRoutes(mux)
+	s.users2Routes(mux)
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "unknown endpoint")

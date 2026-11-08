@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { api } from '../api.js'
   import ConfirmDialog from './ConfirmDialog.svelte'
+  import HomesQuotas from './HomesQuotas.svelte'
 
   let { onSessionLost } = $props()
 
@@ -128,6 +129,8 @@
       {#if loaded}<p class="muted">No users yet. Create one for each person who will use the NAS.</p>{/if}
     {/each}
   </div>
+
+  {#if loaded}<HomesQuotas {users} onChanged={refresh} />{/if}
 
   <h2>Administrator</h2>
   <div class="card list">

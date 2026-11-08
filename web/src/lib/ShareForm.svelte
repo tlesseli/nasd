@@ -17,6 +17,7 @@
   let recycleBin = $state(share?.recycleBin ?? true)
   let timeMachine = $state(share?.timeMachine ?? false)
   let rsyncRead = $state(share?.rsyncRead ?? false)
+  let hidden = $state(share?.hidden ?? false)
   let allowedHosts = $state((share?.allowedHosts ?? []).join(', '))
   let busy = $state(false)
   let error = $state('')
@@ -29,7 +30,7 @@
     error = ''
     try {
       await onSave({
-        name, volume, description, guestRead, recycleBin, timeMachine, rsyncRead,
+        name, volume, description, guestRead, recycleBin, timeMachine, rsyncRead, hidden,
         allowedHosts: allowedHosts.split(/[\s,]+/).filter(Boolean),
         access: Object.fromEntries(Object.entries(access).filter(([, a]) => a)),
       })
@@ -110,6 +111,10 @@
     <label class="check">
       <input type="checkbox" bind:checked={timeMachine} />
       <span><strong>Time Machine</strong> <span class="muted small">· Macs can use this share as a backup disk</span></span>
+    </label>
+    <label class="check">
+      <input type="checkbox" bind:checked={hidden} />
+      <span><strong>Hidden</strong> <span class="muted small">· not listed when browsing the NAS; open it by typing its address</span></span>
     </label>
     <label class="check">
       <input type="checkbox" bind:checked={rsyncRead} />

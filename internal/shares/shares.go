@@ -41,6 +41,9 @@ type Service struct {
 	// Chown and GroupID touch the real system; tests replace them.
 	Chown   func(path string, uid, gid int) error
 	GroupID func(name string) (int, error)
+	UserID  func(name string) (int, error)
+	// QuotaMounts lists the mountpoints of volumes with quotas enabled.
+	QuotaMounts func(ctx context.Context) ([]string, error)
 
 	mu sync.Mutex // one change at a time: state + config files must agree
 }
@@ -49,8 +52,17 @@ func NewService(st *store.Store, mounted func(context.Context) (map[string]strin
 	return &Service{
 		Store: st, Run: run.Exec, RunInput: run.ExecInput,
 		SmbConf: "/etc/samba/smb.conf", RsyncConf: "/etc/rsyncd.conf", AvahiDir: "/etc/avahi/services",
-		Mounted: mounted, Chown: os.Chown, GroupID: lookupGID,
+		Mounted: mounted, Chown: os.Chown, GroupID: lookupGID, UserID: lookupUID,
+		QuotaMounts: func(context.Context) ([]string, error) { return nil, nil },
 	}
+}
+
+func lookupUID(name string) (int, error) {
+	u, err := user.Lookup(name)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(u.Uid)
 }
 
 func lookupGID(name string) (int, error) {
@@ -71,8 +83,9 @@ var reservedUsers = []string{"admin", "root", "nobody", "guest", "daemon", "bin"
 const minPasswordLength = 8
 
 type UserInfo struct {
-	Name   string   `json:"name"`
-	Shares []string `json:"shares"` // shares this user can access
+	Name    string   `json:"name"`
+	Shares  []string `json:"shares"` // shares this user can access
+	QuotaMB int      `json:"quotaMB"`
 }
 
 func (s *Service) Users() []UserInfo {
@@ -82,7 +95,7 @@ func (s *Service) Users() []UserInfo {
 		if u.Admin {
 			continue
 		}
-		info := UserInfo{Name: u.Name, Shares: []string{}}
+		info := UserInfo{Name: u.Name, Shares: []string{}, QuotaMB: u.QuotaMB}
 		for _, sh := range st.Shares {
 			if sh.Access[u.Name] != "" {
 				info.Shares = append(info.Shares, sh.Name)
@@ -129,10 +142,121 @@ func (s *Service) CreateUser(ctx context.Context, name, password string) error {
 		s.Run(ctx, "userdel", name) // roll back: no half-created users
 		return err
 	}
-	return s.Store.Update(func(st *store.State) error {
+	if err := s.Store.Update(func(st *store.State) error {
 		st.Users = append(st.Users, store.User{Name: name})
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	if h := s.Store.Read().Settings.HomeShares; h.Enabled {
+		if err := s.ensureHome(h.Path, name); err != nil {
+			return fmt.Errorf("user created, but not their home folder: %w", err)
+		}
+	}
+	return nil
+}
+
+// ------------------------------------------------------------ home shares
+
+// SetHomeShares switches private home folders on or off. Turning them off
+// only hides them: the folders and their files stay.
+func (s *Service) SetHomeShares(ctx context.Context, enabled bool, volume string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	h := store.HomeShares{Enabled: enabled}
+	if enabled {
+		mounted, err := s.Mounted(ctx)
+		if err != nil {
+			return err
+		}
+		mnt, ok := mounted[volume]
+		if !ok {
+			return fmt.Errorf("volume %q doesn't exist or isn't mounted", volume)
+		}
+		h.Volume, h.Path = volume, filepath.Join(mnt, "homes")
+		if err := os.MkdirAll(h.Path, 0o755); err != nil {
+			return err
+		}
+		for _, u := range s.Users() {
+			if err := s.ensureHome(h.Path, u.Name); err != nil {
+				return err
+			}
+		}
+	} else {
+		h = s.Store.Read().Settings.HomeShares // keep the location for next time
+		h.Enabled = false
+	}
+	if err := s.Store.Update(func(st *store.State) error { st.Settings.HomeShares = h; return nil }); err != nil {
+		return err
+	}
+	return s.apply(ctx)
+}
+
+// ensureHome creates a user's private folder: only they can enter it.
+func (s *Service) ensureHome(root, name string) error {
+	dir := filepath.Join(root, name)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	uid, err := s.UserID(name)
+	if err != nil {
+		return err
+	}
+	gid, err := s.GroupID(Group)
+	if err != nil {
+		return err
+	}
+	if err := s.Chown(dir, uid, gid); err != nil {
+		return err
+	}
+	return os.Chmod(dir, 0o700)
+}
+
+// ------------------------------------------------------------ quotas
+
+// SetQuota sets how much space a user may use on each volume with quotas
+// (0 = unlimited).
+func (s *Service) SetQuota(ctx context.Context, name string, mb int) error {
+	if mb < 0 || mb > 100_000_000 {
+		return errors.New("invalid quota")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if st := s.Store.Read(); !isShareUser(&st, name) {
+		return fmt.Errorf("user %s not found", name)
+	}
+	if err := s.Store.Update(func(st *store.State) error {
+		st.FindUser(name).QuotaMB = mb
+		return nil
+	}); err != nil {
+		return err
+	}
+	return s.applyQuota(ctx, name, mb)
+}
+
+// ApplyQuotas sets every user's limit again (after quotas are enabled on
+// a volume).
+func (s *Service) ApplyQuotas(ctx context.Context) error {
+	var errs []error
+	for _, u := range s.Users() {
+		errs = append(errs, s.applyQuota(ctx, u.Name, u.QuotaMB))
+	}
+	return errors.Join(errs...)
+}
+
+func (s *Service) applyQuota(ctx context.Context, name string, mb int) error {
+	mounts, err := s.QuotaMounts(ctx)
+	if err != nil {
+		return err
+	}
+	for _, m := range mounts {
+		// setquota user block-soft block-hard inode-soft inode-hard: in KiB,
+		// hard limit only (a soft limit would allow a grace period above it).
+		if _, err := s.Run(ctx, "setquota", "-u", name, "0", strconv.Itoa(mb*1024), "0", "0", m); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) SetPassword(ctx context.Context, name, password string) error {
@@ -192,6 +316,7 @@ type ShareRequest struct {
 	TimeMachine  bool              `json:"timeMachine"`
 	RsyncRead    bool              `json:"rsyncRead"`
 	AllowedHosts []string          `json:"allowedHosts"`
+	Hidden       bool              `json:"hidden"`
 }
 
 type ShareInfo struct {
@@ -218,7 +343,11 @@ func (s *Service) Shares(ctx context.Context) ([]ShareInfo, error) {
 // OnVolume lists the shares stored on a volume (to block deleting it).
 func (s *Service) OnVolume(volume string) []string {
 	var names []string
-	for _, sh := range s.Store.Read().Shares {
+	st := s.Store.Read()
+	if h := st.Settings.HomeShares; h.Enabled && h.Volume == volume {
+		names = append(names, "home folders")
+	}
+	for _, sh := range st.Shares {
 		if sh.Volume == volume {
 			names = append(names, sh.Name)
 		}
@@ -292,7 +421,7 @@ func (s *Service) CreateShare(ctx context.Context, req ShareRequest) error {
 		st.Shares = append(st.Shares, store.Share{
 			Name: req.Name, Volume: req.Volume, Path: path, Description: req.Description,
 			Access: req.Access, GuestRead: req.GuestRead, RecycleBin: req.RecycleBin, TimeMachine: req.TimeMachine,
-			RsyncRead: req.RsyncRead, AllowedHosts: req.AllowedHosts,
+			RsyncRead: req.RsyncRead, AllowedHosts: req.AllowedHosts, Hidden: req.Hidden,
 		})
 		return nil
 	})
@@ -332,7 +461,7 @@ func (s *Service) UpdateShare(ctx context.Context, name string, req ShareRequest
 		sh := st.FindShare(name)
 		sh.Description, sh.Access, sh.GuestRead = req.Description, req.Access, req.GuestRead
 		sh.RecycleBin, sh.TimeMachine = req.RecycleBin, req.TimeMachine
-		sh.RsyncRead, sh.AllowedHosts = req.RsyncRead, req.AllowedHosts
+		sh.RsyncRead, sh.AllowedHosts, sh.Hidden = req.RsyncRead, req.AllowedHosts, req.Hidden
 		return nil
 	})
 	if err != nil {
@@ -441,8 +570,10 @@ func (s *Service) apply(ctx context.Context) error {
 func (s *Service) SetSettings(ctx context.Context, settings store.Settings) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Only the protocol switches: other settings (home shares, USB copy)
+	// have their own endpoints and must not be overwritten by a stale copy.
 	if err := s.Store.Update(func(st *store.State) error {
-		st.Settings = settings
+		st.Settings.SMBDisabled, st.Settings.RsyncEnabled = settings.SMBDisabled, settings.RsyncEnabled
 		return nil
 	}); err != nil {
 		return err
