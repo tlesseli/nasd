@@ -9,6 +9,8 @@
   let shares = $state([])
   let users = $state([])
   let volumes = $state([])
+  let settings = $state({ smbDisabled: false, rsyncEnabled: false })
+  let savingSettings = $state(false)
   let loaded = $state(false)
   let error = $state('')
   let notice = $state('')
@@ -17,7 +19,9 @@
 
   async function refresh() {
     try {
-      ;[shares, users, volumes] = await Promise.all([api.get('/api/shares'), api.get('/api/users'), api.get('/api/volumes')])
+      ;[shares, users, volumes, settings] = await Promise.all([
+        api.get('/api/shares'), api.get('/api/users'), api.get('/api/volumes'), api.get('/api/settings'),
+      ])
       loaded = true
     } catch (e) {
       if (e.status === 401) onSessionLost()
@@ -34,6 +38,19 @@
     notice = editing === 'new' ? `Share ${req.name} created.` : `Share ${editing.name} saved.`
     editing = null
     refresh()
+  }
+
+  async function toggle(key, value) {
+    savingSettings = true
+    error = ''
+    try {
+      await api.post('/api/settings', { ...settings, [key]: value })
+      settings = { ...settings, [key]: value }
+    } catch (e) {
+      error = e.message
+    } finally {
+      savingSettings = false
+    }
   }
 
   function askDelete(sh) {
@@ -71,8 +88,25 @@
   {#if error}<p class="error">{error}</p>{/if}
   {#if notice}<p class="notice">{notice}</p>{/if}
 
+  <div class="card list protocols">
+    <div class="row">
+      <label class="check">
+        <input type="checkbox" checked={!settings.smbDisabled} disabled={savingSettings}
+          onchange={(e) => toggle('smbDisabled', !e.currentTarget.checked)} />
+        <span><strong>SMB</strong> <span class="muted small">· Windows, macOS, Linux and phones open shares over SMB</span></span>
+      </label>
+    </div>
+    <div class="row">
+      <label class="check">
+        <input type="checkbox" checked={settings.rsyncEnabled} disabled={savingSettings}
+          onchange={(e) => toggle('rsyncEnabled', e.currentTarget.checked)} />
+        <span><strong>rsync</strong> <span class="muted small">· lets another machine back up shares that have "rsync access" (read only)</span></span>
+      </label>
+    </div>
+  </div>
+
   {#if editing}
-    <ShareForm share={editing === 'new' ? null : editing} volumes={mountedVolumes} {users}
+    <ShareForm rsyncEnabled={settings.rsyncEnabled} share={editing === 'new' ? null : editing} volumes={mountedVolumes} {users}
       onSave={save} onCancel={() => (editing = null)} />
   {/if}
 
@@ -93,6 +127,8 @@
         <dt>Folder</dt><dd class="mono">{sh.path}</dd>
         <dt>Windows</dt><dd class="mono">\\{hostname}\{sh.name}</dd>
         <dt>Mac / Linux</dt><dd class="mono">smb://{hostname}.local/{sh.name}</dd>
+        {#if sh.rsyncRead}<dt>rsync</dt><dd class="mono">rsync://{hostname}.local/{sh.name}/{settings.rsyncEnabled ? '' : ' (rsync is off)'}</dd>{/if}
+        {#if sh.allowedHosts?.length}<dt>Only from</dt><dd class="mono">{sh.allowedHosts.join(', ')}</dd>{/if}
       </dl>
     </article>
   {:else}

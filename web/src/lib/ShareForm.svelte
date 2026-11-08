@@ -2,7 +2,7 @@
   import { untrack } from 'svelte'
 
   // Create or edit a share. `share` is null for a new one.
-  let { share: shareProp = null, volumes: volumesProp, users: usersProp, onSave, onCancel } = $props()
+  let { share: shareProp = null, volumes: volumesProp, users: usersProp, rsyncEnabled = false, onSave, onCancel } = $props()
 
   // The form works on a snapshot taken when it opens: the page refreshing its
   // lists in the background must not reset what you're typing.
@@ -16,6 +16,8 @@
   let guestRead = $state(share?.guestRead ?? false)
   let recycleBin = $state(share?.recycleBin ?? true)
   let timeMachine = $state(share?.timeMachine ?? false)
+  let rsyncRead = $state(share?.rsyncRead ?? false)
+  let allowedHosts = $state((share?.allowedHosts ?? []).join(', '))
   let busy = $state(false)
   let error = $state('')
 
@@ -27,7 +29,8 @@
     error = ''
     try {
       await onSave({
-        name, volume, description, guestRead, recycleBin, timeMachine,
+        name, volume, description, guestRead, recycleBin, timeMachine, rsyncRead,
+        allowedHosts: allowedHosts.split(/[\s,]+/).filter(Boolean),
         access: Object.fromEntries(Object.entries(access).filter(([, a]) => a)),
       })
     } catch (e) {
@@ -91,6 +94,11 @@
       <span><strong>Guests can read</strong> <span class="muted small">· anyone on your network can open it without a password (read only)</span></span>
     </label>
     {#if nobody}<p class="hint">Nobody has access yet: the share stays hidden until you give someone access.</p>{/if}
+    <label>
+      Allowed computers <span class="hint">(optional)</span>
+      <input bind:value={allowedHosts} placeholder="e.g. 192.168.1.20, 192.168.1.0/24" spellcheck="false" />
+      <span class="hint">IP addresses or networks. Empty = any computer on your network. Applies to SMB and rsync.</span>
+    </label>
   </fieldset>
 
   <fieldset>
@@ -102,6 +110,11 @@
     <label class="check">
       <input type="checkbox" bind:checked={timeMachine} />
       <span><strong>Time Machine</strong> <span class="muted small">· Macs can use this share as a backup disk</span></span>
+    </label>
+    <label class="check">
+      <input type="checkbox" bind:checked={rsyncRead} />
+      <span><strong>rsync access (read only)</strong> <span class="muted small">· another NAS or computer can back this share up with rsync, without a password
+        {rsyncEnabled ? '' : '(the rsync service is currently off: switch it on above the share list)'}</span></span>
     </label>
   </fieldset>
 

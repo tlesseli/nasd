@@ -14,8 +14,10 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+	"time"
 )
 
 type User struct {
@@ -35,6 +37,56 @@ type Share struct {
 	GuestRead   bool              `json:"guestRead"` // anyone on the LAN can read, no password
 	RecycleBin  bool              `json:"recycleBin"`
 	TimeMachine bool              `json:"timeMachine"`
+	RsyncRead   bool              `json:"rsyncRead"` // readable by the rsync service (for backups by another machine)
+	// AllowedHosts restricts SMB and rsync access to these IPs / networks
+	// (empty = the whole LAN).
+	AllowedHosts []string `json:"allowedHosts"`
+}
+
+// Settings are global switches. Note the "Disabled" name: a missing field in
+// an older state.json reads as false, so the safe default (SMB on) must be
+// the zero value.
+type Settings struct {
+	SMBDisabled  bool `json:"smbDisabled"`
+	RsyncEnabled bool `json:"rsyncEnabled"`
+}
+
+// BackupJob copies a share to or from somewhere else with rsync.
+type BackupJob struct {
+	ID        int          `json:"id"`
+	Name      string       `json:"name"`
+	Direction string       `json:"direction"` // "push" (share -> target) or "pull" (target -> share)
+	Share     string       `json:"share"`
+	Target    BackupTarget `json:"target"`
+	Mirror    bool         `json:"mirror"` // delete files on the destination that are gone from the source
+	Excludes  []string     `json:"excludes"`
+	Schedule  Schedule     `json:"schedule"`
+	LastRun   BackupRun    `json:"lastRun"`
+}
+
+type BackupTarget struct {
+	Kind     string `json:"kind"`               // "usb", "ssh" or "rsync"
+	USBUUID  string `json:"usbUUID,omitempty"`  // usb: filesystem UUID
+	Host     string `json:"host,omitempty"`     // ssh, rsync
+	Port     int    `json:"port,omitempty"`     // ssh (22), rsync (873)
+	User     string `json:"user,omitempty"`     // ssh; optional for rsync
+	Password string `json:"password,omitempty"` // rsync only (ssh uses the NAS key)
+	Module   string `json:"module,omitempty"`   // rsync
+	Path     string `json:"path"`               // folder on the target
+}
+
+type Schedule struct {
+	Kind    string `json:"kind"`    // "" (manual), "hourly", "daily", "weekly"
+	Weekday int    `json:"weekday"` // 0 = Sunday (weekly)
+	Hour    int    `json:"hour"`    // daily, weekly
+	Minute  int    `json:"minute"`
+}
+
+type BackupRun struct {
+	Status  string    `json:"status"` // "" (never ran), "done", "failed"
+	Started time.Time `json:"started,omitzero"`
+	Ended   time.Time `json:"ended,omitzero"`
+	Summary string    `json:"summary"`
 }
 
 // State is everything nasd persists. New fields get added here as the
@@ -44,8 +96,20 @@ type Share struct {
 // others are file-sharing accounts: they exist as Linux + Samba users and
 // can't log into the UI.
 type State struct {
-	Users  []User  `json:"users"`
-	Shares []Share `json:"shares"`
+	Users        []User      `json:"users"`
+	Shares       []Share     `json:"shares"`
+	Settings     Settings    `json:"settings"`
+	Backups      []BackupJob `json:"backups"`
+	NextBackupID int         `json:"nextBackupId"`
+}
+
+func (s *State) FindBackup(id int) *BackupJob {
+	for i := range s.Backups {
+		if s.Backups[i].ID == id {
+			return &s.Backups[i]
+		}
+	}
+	return nil
 }
 
 func (s *State) FindShare(name string) *Share {
@@ -146,7 +210,13 @@ func clone(st State) State {
 	out.Shares = make([]Share, len(st.Shares))
 	for i, sh := range st.Shares {
 		sh.Access = maps.Clone(sh.Access)
+		sh.AllowedHosts = slices.Clone(sh.AllowedHosts)
 		out.Shares[i] = sh
+	}
+	out.Backups = make([]BackupJob, len(st.Backups))
+	for i, b := range st.Backups {
+		b.Excludes = slices.Clone(b.Excludes)
+		out.Backups[i] = b
 	}
 	return out
 }

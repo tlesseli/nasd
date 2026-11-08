@@ -43,7 +43,7 @@ func execute(ctx context.Context, stdin io.Reader, name string, args ...string) 
 		if msg == "" {
 			msg = strings.TrimSpace(string(out))
 		}
-		return out, fmt.Errorf("%s failed (%v): %s", name, err, msg)
+		return out, fmt.Errorf("%s failed (%w): %s", name, err, msg) // %w: callers can inspect the exit code
 	}
 	return out, nil
 }

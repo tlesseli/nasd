@@ -18,6 +18,7 @@ import (
 
 	"readynas/internal/api"
 	"readynas/internal/auth"
+	"readynas/internal/backups"
 	"readynas/internal/disks"
 	"readynas/internal/jobs"
 	"readynas/internal/run"
@@ -70,12 +71,16 @@ func main() {
 		log.Printf("warning: applying Samba config: %v", err)
 	}
 
+	jm := jobs.NewManager(run.Exec)
+	bk := backups.NewService(st, jm, *dataDir)
+
 	srv := &api.Server{
 		Store:    st,
 		Disks:    disks.NewService(run.Exec),
 		Volumes:  vols,
 		Shares:   shr,
-		Jobs:     jobs.NewManager(run.Exec),
+		Jobs:     jm,
+		Backups:  bk,
 		Sessions: auth.NewSessions(30 * time.Minute),
 		Throttle: auth.NewThrottle(5, 10*time.Minute),
 		UI:       web.Dist(),
@@ -90,6 +95,7 @@ func main() {
 	// Stop cleanly on Ctrl-C or `systemctl stop` (SIGTERM).
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	go bk.RunScheduler(ctx)
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

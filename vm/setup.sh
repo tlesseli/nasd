@@ -48,9 +48,18 @@ packages:
   - avahi-daemon   # makes the NAS visible in macOS Finder
   - parted
   - nvme-cli
+  - rsync          # backups
+  - exfatprogs     # USB disks formatted exFAT
+  - dosfstools     # USB disks formatted FAT32
+  # The cloud kernel has no USB storage drivers: use Debian's standard
+  # kernel, the same one the real ReadyNAS will run.
+  - linux-image-amd64
+runcmd:
+  - [sh, -c, "DEBIAN_FRONTEND=noninteractive apt-get purge -y 'linux-image-*cloud*' && reboot"]
 EOF
 printf 'instance-id: nas-dev-%s\nlocal-hostname: nas-dev\n' "$(date +%s)" > meta-data
 genisoimage -quiet -output seed.iso -volid cidata -joliet -rock user-data meta-data
 rm -f user-data meta-data
 
-echo ">> VM ready. Start it with: vm/run.sh   (first boot installs packages, ~1-2 min)"
+rm -f usb*.qcow2
+echo ">> VM ready. Start it with: vm/run.sh   (first boot installs packages and reboots, ~3 min)"

@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -29,11 +30,12 @@ import (
 const Group = "nasusers"
 
 type Service struct {
-	Store    *store.Store
-	Run      run.Func
-	RunInput run.InputFunc
-	SmbConf  string // /etc/samba/smb.conf
-	AvahiDir string // /etc/avahi/services
+	Store     *store.Store
+	Run       run.Func
+	RunInput  run.InputFunc
+	SmbConf   string // /etc/samba/smb.conf
+	RsyncConf string // /etc/rsyncd.conf
+	AvahiDir  string // /etc/avahi/services
 	// Mounted returns volume name -> mountpoint for mounted volumes.
 	Mounted func(ctx context.Context) (map[string]string, error)
 	// Chown and GroupID touch the real system; tests replace them.
@@ -46,7 +48,7 @@ type Service struct {
 func NewService(st *store.Store, mounted func(context.Context) (map[string]string, error)) *Service {
 	return &Service{
 		Store: st, Run: run.Exec, RunInput: run.ExecInput,
-		SmbConf: "/etc/samba/smb.conf", AvahiDir: "/etc/avahi/services",
+		SmbConf: "/etc/samba/smb.conf", RsyncConf: "/etc/rsyncd.conf", AvahiDir: "/etc/avahi/services",
 		Mounted: mounted, Chown: os.Chown, GroupID: lookupGID,
 	}
 }
@@ -181,13 +183,15 @@ var reservedShares = []string{"global", "homes", "printers", "print$", "ipc$"}
 
 // ShareRequest is what the UI sends. Name and Volume are only used on create.
 type ShareRequest struct {
-	Name        string            `json:"name"`
-	Volume      string            `json:"volume"`
-	Description string            `json:"description"`
-	Access      map[string]string `json:"access"`
-	GuestRead   bool              `json:"guestRead"`
-	RecycleBin  bool              `json:"recycleBin"`
-	TimeMachine bool              `json:"timeMachine"`
+	Name         string            `json:"name"`
+	Volume       string            `json:"volume"`
+	Description  string            `json:"description"`
+	Access       map[string]string `json:"access"`
+	GuestRead    bool              `json:"guestRead"`
+	RecycleBin   bool              `json:"recycleBin"`
+	TimeMachine  bool              `json:"timeMachine"`
+	RsyncRead    bool              `json:"rsyncRead"`
+	AllowedHosts []string          `json:"allowedHosts"`
 }
 
 type ShareInfo struct {
@@ -231,6 +235,16 @@ func isShareUser(st *store.State, name string) bool {
 func validateSettings(req ShareRequest, st store.State) error {
 	if len(req.Description) > 100 || strings.ContainsAny(req.Description, "\n\r") {
 		return errors.New("description must be a single line of at most 100 characters")
+	}
+	if len(req.AllowedHosts) > 10 {
+		return errors.New("at most 10 allowed computers or networks")
+	}
+	for _, h := range req.AllowedHosts {
+		if net.ParseIP(h) == nil {
+			if _, _, err := net.ParseCIDR(h); err != nil {
+				return fmt.Errorf("%q is not an IP address (192.168.1.20) or a network (192.168.1.0/24)", h)
+			}
+		}
 	}
 	for name, access := range req.Access {
 		if access != "ro" && access != "rw" {
@@ -278,6 +292,7 @@ func (s *Service) CreateShare(ctx context.Context, req ShareRequest) error {
 		st.Shares = append(st.Shares, store.Share{
 			Name: req.Name, Volume: req.Volume, Path: path, Description: req.Description,
 			Access: req.Access, GuestRead: req.GuestRead, RecycleBin: req.RecycleBin, TimeMachine: req.TimeMachine,
+			RsyncRead: req.RsyncRead, AllowedHosts: req.AllowedHosts,
 		})
 		return nil
 	})
@@ -317,6 +332,7 @@ func (s *Service) UpdateShare(ctx context.Context, name string, req ShareRequest
 		sh := st.FindShare(name)
 		sh.Description, sh.Access, sh.GuestRead = req.Description, req.Access, req.GuestRead
 		sh.RecycleBin, sh.TimeMachine = req.RecycleBin, req.TimeMachine
+		sh.RsyncRead, sh.AllowedHosts = req.RsyncRead, req.AllowedHosts
 		return nil
 	})
 	if err != nil {
@@ -385,16 +401,53 @@ func (s *Service) apply(ctx context.Context) error {
 	if err := os.Rename(tmp.Name(), s.SmbConf); err != nil {
 		return err
 	}
-	// Running smbd processes re-read the config; open connections pick up
-	// changes when they reconnect.
-	if _, err := s.Run(ctx, "systemctl", "reload-or-restart", "smbd"); err != nil {
-		return err
-	}
 	// Avahi watches its services directory and reloads by itself.
-	if err := os.MkdirAll(s.AvahiDir, 0o755); err != nil {
+	avahiFile := filepath.Join(s.AvahiDir, "nasd-smb.service")
+	if st.Settings.SMBDisabled {
+		if _, err := s.Run(ctx, "systemctl", "disable", "--now", "smbd", "nmbd", "wsdd2"); err != nil {
+			return err
+		}
+		os.Remove(avahiFile)
+	} else {
+		if _, err := s.Run(ctx, "systemctl", "enable", "--now", "smbd", "nmbd", "wsdd2"); err != nil {
+			return err
+		}
+		// Running smbd processes re-read the config; open connections pick
+		// up changes when they reconnect.
+		if _, err := s.Run(ctx, "systemctl", "reload-or-restart", "smbd"); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(s.AvahiDir, 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(avahiFile, []byte(renderAvahi(st)), 0o644); err != nil {
+			return err
+		}
+	}
+
+	// rsync daemon: reads its config at each connection, no reload needed.
+	if err := os.WriteFile(s.RsyncConf, []byte(renderRsyncd(st)), 0o644); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(s.AvahiDir, "nasd-smb.service"), []byte(renderAvahi(st)), 0o644)
+	action := []string{"disable", "--now", "rsync"}
+	if st.Settings.RsyncEnabled {
+		action = []string{"enable", "--now", "rsync"}
+	}
+	_, err = s.Run(ctx, "systemctl", action...)
+	return err
+}
+
+// SetSettings switches protocols on or off.
+func (s *Service) SetSettings(ctx context.Context, settings store.Settings) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.Store.Update(func(st *store.State) error {
+		st.Settings = settings
+		return nil
+	}); err != nil {
+		return err
+	}
+	return s.apply(ctx)
 }
 
 // ------------------------------------------------------------- services
@@ -410,6 +463,7 @@ func (s *Service) Status(ctx context.Context) []ServiceStatus {
 		{Unit: "smbd", Label: "File sharing (SMB)"},
 		{Unit: "wsdd2", Label: "Windows discovery"},
 		{Unit: "avahi-daemon", Label: "macOS discovery (Bonjour)"},
+		{Unit: "rsync", Label: "Backup server (rsync)"},
 	}
 	for i := range units {
 		out, _ := s.Run(ctx, "systemctl", "is-active", units[i].Unit)

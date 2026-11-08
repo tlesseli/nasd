@@ -30,5 +30,6 @@ exec qemu-system-x86_64 \
   -device virtio-blk-pci,drive=sys,bootindex=0 \
   -drive file=seed.iso,if=virtio,format=raw,readonly=on \
   -device ahci,id=ahci \
+  -device qemu-xhci,id=usb \
   "${disks[@]}" \
   -nic user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:2222-:22,hostfwd=tcp:127.0.0.1:8443-:8443,hostfwd=tcp:127.0.0.1:4445-:445

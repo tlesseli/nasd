@@ -124,8 +124,12 @@ func parseLsblk(data []byte) ([]Disk, error) {
 				disk.Partitions = append(disk.Partitions, c.Path)
 			}
 		}
-		if holdsSystem(d) {
+		switch {
+		case holdsSystem(d):
 			disk.Role = "system"
+		case disk.Transport == "usb":
+			// External disks come and go: never part of a RAID, used for backups.
+			disk.Role = "usb"
 		}
 		disks = append(disks, disk)
 	}

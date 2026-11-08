@@ -16,8 +16,10 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"readynas/internal/auth"
+	"readynas/internal/backups"
 	"readynas/internal/shares"
 	"readynas/internal/store"
 )
@@ -96,6 +98,11 @@ func (s *Server) updateShare(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteShare(w http.ResponseWriter, r *http.Request) {
+	st := s.Store.Read()
+	if used := backups.SharesUsedBy(&st, r.PathValue("name")); len(used) > 0 {
+		writeError(w, http.StatusBadRequest, "backup jobs use this share ("+strings.Join(used, ", ")+"): delete them first")
+		return
+	}
 	result(w, s.Shares.DeleteShare(r.Context(), r.PathValue("name")))
 }
 

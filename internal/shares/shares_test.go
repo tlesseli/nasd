@@ -52,8 +52,9 @@ func newTestService(t *testing.T) (*Service, *fakeSystem, string) {
 	f := &fakeSystem{fail: map[string]error{}}
 	s := &Service{
 		Store: st, Run: f.run, RunInput: f.runInput,
-		SmbConf:  filepath.Join(dir, "samba", "smb.conf"),
-		AvahiDir: filepath.Join(dir, "avahi"),
+		SmbConf:   filepath.Join(dir, "samba", "smb.conf"),
+		RsyncConf: filepath.Join(dir, "rsyncd.conf"),
+		AvahiDir:  filepath.Join(dir, "avahi"),
 		Mounted: func(context.Context) (map[string]string, error) {
 			return map[string]string{"media": vol}, nil
 		},
@@ -208,4 +209,43 @@ func section(conf, name string) string {
 	_, after, _ := strings.Cut(conf, "["+name+"]\n")
 	block, _, _ := strings.Cut(after, "\n[")
 	return block
+}
+
+func TestRsyncAndHosts(t *testing.T) {
+	s, f, _ := newTestService(t)
+	ctx := context.Background()
+	s.CreateUser(ctx, "alice", "secret-password")
+	if err := s.CreateShare(ctx, ShareRequest{Name: "Docs", Volume: "media", Access: map[string]string{"alice": "rw"},
+		RsyncRead: true, AllowedHosts: []string{"192.168.1.20", "10.0.0.0/8"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateShare(ctx, ShareRequest{Name: "Bad", Volume: "media", AllowedHosts: []string{"my-pc"}}); err == nil {
+		t.Error("host names must be refused (Samba resolves them unreliably)")
+	}
+	smb, _ := os.ReadFile(s.SmbConf)
+	if !strings.Contains(section(string(smb), "Docs"), "hosts allow = 192.168.1.20 10.0.0.0/8") {
+		t.Errorf("smb.conf:\n%s", smb)
+	}
+	rs, _ := os.ReadFile(s.RsyncConf)
+	if !strings.Contains(string(rs), "[Docs]") || !strings.Contains(string(rs), "hosts allow = 192.168.1.20 10.0.0.0/8") {
+		t.Errorf("rsyncd.conf:\n%s", rs)
+	}
+	all := strings.Join(f.cmds, "\n")
+	if !strings.Contains(all, "systemctl disable --now rsync") {
+		t.Error("rsync must stay off until enabled")
+	}
+
+	f.cmds = nil
+	if err := s.SetSettings(ctx, store.Settings{SMBDisabled: true, RsyncEnabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	all = strings.Join(f.cmds, "\n")
+	for _, want := range []string{"systemctl disable --now smbd nmbd wsdd2", "systemctl enable --now rsync"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("missing %q in:\n%s", want, all)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(s.AvahiDir, "nasd-smb.service")); err == nil {
+		t.Error("the Bonjour announcement must be removed when SMB is off")
+	}
 }
