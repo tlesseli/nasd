@@ -20,22 +20,6 @@ import (
 
 const maxDelay = time.Hour
 
-// due reports whether a schedule fires at minute t.
-func due(s store.Schedule, t time.Time) bool {
-	if t.Minute() != s.Minute {
-		return false
-	}
-	switch s.Kind {
-	case "hourly":
-		return true
-	case "daily":
-		return t.Hour() == s.Hour
-	case "weekly":
-		return t.Hour() == s.Hour && int(t.Weekday()) == s.Weekday
-	}
-	return false
-}
-
 // RunScheduler checks schedules every 20 seconds until ctx is cancelled.
 func (s *Service) RunScheduler(ctx context.Context) {
 	ticker := time.NewTicker(20 * time.Second)
@@ -57,7 +41,7 @@ func (s *Service) tick() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, b := range st.Backups {
-		if due(b.Schedule, now) && !s.lastFired[b.ID].Equal(now) {
+		if b.Schedule.Due(now) && !s.lastFired[b.ID].Equal(now) {
 			s.lastFired[b.ID] = now
 			s.pending[b.ID] = now
 		}

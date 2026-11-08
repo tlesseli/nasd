@@ -82,6 +82,62 @@ type Schedule struct {
 	Minute  int    `json:"minute"`
 }
 
+// Due reports whether the schedule fires at minute t.
+func (s Schedule) Due(t time.Time) bool {
+	if t.Minute() != s.Minute {
+		return false
+	}
+	switch s.Kind {
+	case "hourly":
+		return true
+	case "daily":
+		return t.Hour() == s.Hour
+	case "weekly":
+		return t.Hour() == s.Hour && int(t.Weekday()) == s.Weekday
+	}
+	return false
+}
+
+// AlertSettings: who gets emails and how they are sent.
+type AlertSettings struct {
+	Emails   []string `json:"emails"` // up to 3
+	SMTP     SMTP     `json:"smtp"`
+	Disabled []string `json:"disabled"` // optional event kinds switched off
+	// Temperature (°C) above which a disk triggers an alert; 0 = default.
+	DiskTempLimit int `json:"diskTempLimit"`
+	// Volume usage (%) above which an alert is sent; 0 = default.
+	VolumeFullPercent int `json:"volumeFullPercent"`
+}
+
+type SMTP struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Security string `json:"security"` // "starttls", "tls" or "none"
+	User     string `json:"user"`
+	Password string `json:"password,omitempty"`
+	From     string `json:"from"`
+}
+
+// Event is something worth telling the owner about.
+type Event struct {
+	Time     time.Time `json:"time"`
+	Kind     string    `json:"kind"`
+	Severity string    `json:"severity"` // "critical", "warning" or "info"
+	Subject  string    `json:"subject"`
+	Body     string    `json:"body"`
+	Emailed  bool      `json:"emailed"`
+	EmailErr string    `json:"emailError,omitempty"`
+}
+
+// Maintenance of one volume: a scheduled consistency check ("scrub").
+type Maintenance struct {
+	Scrub   Schedule `json:"scrub"`
+	AutoFix bool     `json:"autoFix"` // repair parity mismatches found by a check
+	// FsckAtBoot: an ext4 check was requested for the next boot; nasd
+	// restores the normal settings once the NAS has restarted.
+	FsckAtBoot bool `json:"fsckAtBoot"`
+}
+
 type BackupRun struct {
 	Status  string    `json:"status"` // "" (never ran), "done", "failed"
 	Started time.Time `json:"started,omitzero"`
@@ -96,11 +152,14 @@ type BackupRun struct {
 // others are file-sharing accounts: they exist as Linux + Samba users and
 // can't log into the UI.
 type State struct {
-	Users        []User      `json:"users"`
-	Shares       []Share     `json:"shares"`
-	Settings     Settings    `json:"settings"`
-	Backups      []BackupJob `json:"backups"`
-	NextBackupID int         `json:"nextBackupId"`
+	Users        []User                 `json:"users"`
+	Shares       []Share                `json:"shares"`
+	Settings     Settings               `json:"settings"`
+	Backups      []BackupJob            `json:"backups"`
+	NextBackupID int                    `json:"nextBackupId"`
+	Alerts       AlertSettings          `json:"alerts"`
+	Events       []Event                `json:"events"`      // most recent last, capped
+	Maintenance  map[string]Maintenance `json:"maintenance"` // by volume name
 }
 
 func (s *State) FindBackup(id int) *BackupJob {
@@ -213,6 +272,10 @@ func clone(st State) State {
 		sh.AllowedHosts = slices.Clone(sh.AllowedHosts)
 		out.Shares[i] = sh
 	}
+	out.Alerts.Emails = slices.Clone(st.Alerts.Emails)
+	out.Alerts.Disabled = slices.Clone(st.Alerts.Disabled)
+	out.Events = slices.Clone(st.Events)
+	out.Maintenance = maps.Clone(st.Maintenance)
 	out.Backups = make([]BackupJob, len(st.Backups))
 	for i, b := range st.Backups {
 		b.Excludes = slices.Clone(b.Excludes)

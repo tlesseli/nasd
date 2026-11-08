@@ -4,6 +4,7 @@
   import CreateVolume from './CreateVolume.svelte'
   import JobPanel from './JobPanel.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
+  import VolumeMaintenance from './VolumeMaintenance.svelte'
 
   let { onSessionLost } = $props()
 
@@ -263,6 +264,7 @@
           {/if}
         </div>
       {/if}
+      <VolumeMaintenance volume={v} {busy} onJob={(j) => (job = j)} />
     </article>
   {:else}
     {#if loaded && !creating}

@@ -26,10 +26,13 @@ import (
 	"strings"
 	"time"
 
+	"readynas/internal/alerts"
 	"readynas/internal/auth"
 	"readynas/internal/backups"
 	"readynas/internal/disks"
 	"readynas/internal/jobs"
+	"readynas/internal/monitor"
+	"readynas/internal/run"
 	"readynas/internal/shares"
 	"readynas/internal/store"
 	"readynas/internal/system"
@@ -49,6 +52,10 @@ type Server struct {
 	Jobs     *jobs.Manager
 	Shares   *shares.Service
 	Backups  *backups.Service
+	Alerts   *alerts.Service
+	Monitor  *monitor.Monitor
+	Run      run.Func // for read-only commands (smartctl -x, journalctl)
+	Sys      string   // "/sys"
 	Sessions *auth.Sessions
 	Throttle *auth.Throttle
 	UI       fs.FS // built Svelte app (web/dist)
@@ -68,6 +75,7 @@ func (s *Server) Handler() http.Handler {
 	s.volumeRoutes(mux)
 	s.shareRoutes(mux)
 	s.backupRoutes(mux)
+	s.healthRoutes(mux)
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "unknown endpoint")

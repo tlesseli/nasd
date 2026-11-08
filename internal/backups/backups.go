@@ -35,6 +35,8 @@ type Service struct {
 	DataDir   string   // /var/lib/nasd: SSH key, known_hosts, temporary password files
 	MountBase string   // /run/nasd/usb: where USB disks are mounted during a job
 	Now       func() time.Time
+	// Notify raises an alert (nil in tests).
+	Notify func(kind, subject, body string)
 
 	mu        sync.Mutex
 	lastFired map[int]time.Time // scheduler: job id -> minute it was last triggered

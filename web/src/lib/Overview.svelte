@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import { api, formatBytes, formatDuration } from '../api.js'
+  import TextDialog from './TextDialog.svelte'
 
   let { onSessionLost } = $props()
 
@@ -8,6 +9,9 @@
   let disks = $state([])
   let volumes = $state([])
   let services = $state([])
+  let sensors = $state([])
+  let events = $state([])
+  let smart = $state(null) // {title, text}
   let error = $state('')
 
   async function refresh() {
@@ -15,6 +19,7 @@
       ;[sys, disks, volumes, services] = await Promise.all([
         api.get('/api/system'), api.get('/api/disks'), api.get('/api/volumes'), api.get('/api/services'),
       ])
+      ;[sensors, events] = await Promise.all([api.get('/api/sensors'), api.get('/api/events')])
       error = ''
     } catch (e) {
       if (e.status === 401) onSessionLost()
@@ -27,6 +32,16 @@
     const timer = setInterval(refresh, 10_000)
     return () => clearInterval(timer)
   })
+
+  async function showSmart(d) {
+    smart = { title: `SMART report: ${d.name} (${d.model})`, text: 'Loading…' }
+    try {
+      smart.text = (await api.get(`/api/disks/${d.name}/smart`)).report
+    } catch (e) {
+      smart.text = e.message
+    }
+  }
+  const sevClass = { critical: 'bad', warning: 'warn', info: 'neutral' }
 
   // One word for the state of a disk, used for the colored badge.
   function status(d) {
@@ -62,6 +77,36 @@
     </section>
   {/if}
 
+  {#if events.some((e) => e.severity !== 'info')}
+    {@const recent = events.filter((e) => e.severity !== 'info').slice(0, 3)}
+    <h2>Recent alerts <a class="small" href="#/system">all events</a></h2>
+    <div class="card list">
+      {#each recent as e, i (i)}
+        <div class="row">
+          <span class="badge {sevClass[e.severity]}">{e.severity}</span>
+          <strong>{e.subject}</strong>
+          <span class="spacer"></span>
+          <span class="muted small">{new Date(e.time).toLocaleString()}</span>
+        </div>
+      {/each}
+    </div>
+  {/if}
+
+  <h2>Temperatures and fans</h2>
+  <div class="card list">
+    {#each sensors as s (s.id)}
+      {@const hot = s.kind === 'temp' && s.limit && s.value >= s.limit}
+      {@const stopped = s.kind === 'fan' && s.value === 0}
+      <div class="row">
+        <span class="badge {hot || stopped ? 'bad' : 'good'}">{s.kind === 'temp' ? `${s.value.toFixed(0)} °C` : `${s.value} RPM`}</span>
+        <strong>{s.label}</strong>
+        <span class="muted small">{s.chip}{s.limit ? ` · limit ${s.kind === 'temp' ? s.limit + ' °C' : s.limit + ' RPM'}` : ''}</span>
+      </div>
+    {:else}
+      <p class="muted small">No hardware sensors found (normal in a virtual machine; the real ReadyNAS reports its fan and temperatures).</p>
+    {/each}
+  </div>
+
   {#if services.length}
     <h2>Services</h2>
     <div class="card list">
@@ -95,6 +140,9 @@
             <dt>Bad sectors</dt><dd>{d.health.reallocatedSectors + d.health.pendingSectors}</dd>
           {/if}
         </dl>
+        {#if d.health?.supported}
+          <button class="link small smart-link" onclick={() => showSmart(d)}>SMART details</button>
+        {/if}
       </article>
     {:else}
       <p class="muted">No data disks detected.</p>
@@ -105,3 +153,5 @@
     <p class="muted small">System disk: {systemDisks.map((d) => `${d.name} (${formatBytes(d.sizeBytes)})`).join(', ')}</p>
   {/if}
 </main>
+
+{#if smart}<TextDialog title={smart.title} text={smart.text} onClose={() => (smart = null)} />{/if}

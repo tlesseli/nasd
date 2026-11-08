@@ -169,3 +169,16 @@ textarea { font: inherit; font-family: ui-monospace, monospace; font-size: 0.85r
 .keybox pre { margin: 0; font-size: 0.75rem; white-space: pre-wrap; word-break: break-all; user-select: all; }
 .good-text { color: var(--good); }
 .protocols { margin-bottom: 1.5rem; }
+.tabs { display: flex; gap: 0.25rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border); }
+.tabs button { background: none; color: var(--muted); border-radius: 6px 6px 0 0; border-bottom: 2px solid transparent; }
+.tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+.logs { margin: 0.75rem 0 0; max-height: 70vh; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; font-size: 0.75rem; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.dialog.wide { max-width: 900px; }
+.dialog.wide .logs { max-height: 65vh; }
+.event { align-items: flex-start; }
+.event-body { flex-basis: 100%; margin: 0.2rem 0 0; }
+.smart-link { margin-top: 0.75rem; padding: 0; }
+.maintenance { border-top: 1px solid var(--border); padding-top: 0.75rem; display: flex; flex-direction: column; gap: 0.6rem; }
+.maintenance summary { cursor: pointer; font-weight: 500; }
+.maintenance[open] > :not(summary) { margin-top: 0.6rem; }
+h2 a { font-weight: 400; margin-left: 0.5rem; }

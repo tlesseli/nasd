@@ -43,6 +43,9 @@ func (s *Service) Start(id int, trigger string) (jobs.Snapshot, error) {
 		run := store.BackupRun{Status: "done", Started: started, Ended: s.Now(), Summary: summary}
 		if err != nil {
 			run.Status, run.Summary = "failed", err.Error()
+			if s.Notify != nil {
+				s.Notify("backup_failed", "Backup \""+job.Name+"\" failed", err.Error())
+			}
 		}
 		s.Store.Update(func(st *store.State) error {
 			if b := st.FindBackup(job.ID); b != nil {

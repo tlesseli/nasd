@@ -7,6 +7,7 @@
   import Shares from './lib/Shares.svelte'
   import Users from './lib/Users.svelte'
   import Backups from './lib/Backups.svelte'
+  import System from './lib/System.svelte'
 
   // Which screen to show: 'loading' | 'setup' | 'login' | 'app'
   let screen = $state('loading')
@@ -22,6 +23,7 @@
     { path: '/shares', label: 'Shares' },
     { path: '/users', label: 'Users' },
     { path: '/backups', label: 'Backups' },
+    { path: '/system', label: 'System' },
   ]
 
   onMount(async () => {
@@ -76,6 +78,8 @@
     <Users {onSessionLost} />
   {:else if route === '/backups'}
     <Backups {onSessionLost} />
+  {:else if route === '/system'}
+    <System {onSessionLost} />
   {:else}
     <Overview {onSessionLost} />
   {/if}

@@ -61,6 +61,9 @@ type Volume struct {
 	// The filesystem is clearly smaller than the volume (e.g. a reshape
 	// finished while nasd wasn't watching): offer to grow it.
 	CanGrowFS bool `json:"canGrowFS"`
+	// Result of the last consistency check (see maintenance.go).
+	LastSyncAction string `json:"lastSyncAction"` // check, repair, resync, recover...
+	MismatchCount  int64  `json:"mismatchCount"`  // blocks that didn't match their parity/mirror
 }
 
 // Level describes a RAID level: minimum disks, usable capacity (in number
@@ -176,6 +179,9 @@ func (s *Service) readSysfs(dev string) (Volume, bool) {
 		v.Members = append(v.Members, m)
 	}
 	sort.Slice(v.Members, func(i, j int) bool { return v.Members[i].Disk < v.Members[j].Disk })
+
+	v.LastSyncAction = readStr(md, "last_sync_action")
+	v.MismatchCount = int64(readInt(md, "mismatch_cnt"))
 
 	action := readStr(md, "sync_action")
 	if action != "" && action != "idle" {

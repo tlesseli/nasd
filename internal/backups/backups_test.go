@@ -180,7 +180,7 @@ func TestDue(t *testing.T) {
 		{store.Schedule{Kind: "", Hour: 3}, mon0300, false},
 	}
 	for _, c := range cases {
-		if got := due(c.s, c.t); got != c.want {
+		if got := c.s.Due(c.t); got != c.want {
 			t.Errorf("due(%+v, %s) = %v", c.s, c.t, got)
 		}
 	}
