@@ -23,9 +23,11 @@ import (
 	"readynas/internal/disks"
 	"readynas/internal/jobs"
 	"readynas/internal/monitor"
+	"readynas/internal/power"
 	"readynas/internal/run"
 	"readynas/internal/shares"
 	"readynas/internal/store"
+	"readynas/internal/sysconf"
 	"readynas/internal/tlsutil"
 	"readynas/internal/volumes"
 	"readynas/web"
@@ -79,6 +81,12 @@ func main() {
 	bk.Notify = al.Notify
 	dk := disks.NewService(run.Exec)
 	mon := monitor.New(st, vols, dk, al)
+	pw := power.NewService(st, dk, jm)
+	pw.Notify = al.Notify
+	mon.Power = pw
+	sc := sysconf.NewService(st, jm)
+	sc.Notify = al.Notify
+	sc.ResumePending() // a network change not confirmed before a restart still rolls back
 	afterBootCheck(st, vols, al)
 
 	srv := &api.Server{
@@ -86,6 +94,8 @@ func main() {
 		Disks:    dk,
 		Alerts:   al,
 		Monitor:  mon,
+		Power:    pw,
+		System:   sc,
 		Run:      run.Exec,
 		Sys:      "/sys",
 		Volumes:  vols,
@@ -108,6 +118,13 @@ func main() {
 	defer stop()
 	go bk.RunScheduler(ctx)
 	go mon.Run(ctx)
+	go pw.RunTimer(ctx)
+	go func() {
+		// Spin-down and Wake-on-LAN don't survive a reboot: apply them again.
+		if err := pw.Apply(ctx); err != nil {
+			log.Printf("warning: applying power settings: %v", err)
+		}
+	}()
 	al.Notify("system_started", "The NAS started", "nasd started.")
 	go func() {
 		<-ctx.Done()

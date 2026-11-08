@@ -51,6 +51,9 @@ packages:
   - rsync          # backups
   - exfatprogs     # USB disks formatted exFAT
   - dosfstools     # USB disks formatted FAT32
+  - hdparm         # disk spin-down
+  - nut-server     # UPS support (Network UPS Tools)
+  - nut-client
   # The cloud kernel has no USB storage drivers: use Debian's standard
   # kernel, the same one the real ReadyNAS will run.
   - linux-image-amd64

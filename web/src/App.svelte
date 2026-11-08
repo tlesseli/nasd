@@ -79,7 +79,7 @@
   {:else if route === '/backups'}
     <Backups {onSessionLost} />
   {:else if route === '/system'}
-    <System {onSessionLost} />
+    <System {hostname} {onSessionLost} />
   {:else}
     <Overview {onSessionLost} />
   {/if}

@@ -37,6 +37,9 @@ var Kinds = []Kind{
 	{"raid_degraded", "A volume lost a disk (no redundancy left)", "critical", true},
 	{"disk_failed", "A disk is failing (SMART)", "critical", true},
 	{"fan_failed", "A fan stopped", "critical", true},
+	{"ups_low_battery", "UPS battery low: the NAS shuts down", "critical", true},
+	{"ups_on_battery", "Power cut: running on the UPS battery", "warning", false},
+	{"ups_lost", "The UPS doesn't answer", "warning", false},
 	{"disk_warning", "A disk has bad sectors", "warning", false},
 	{"disk_hot", "A disk is too hot", "warning", false},
 	{"system_hot", "A system temperature is too high", "warning", false},
@@ -47,6 +50,8 @@ var Kinds = []Kind{
 	{"raid_rebuilt", "A volume finished rebuilding", "info", false},
 	{"scrub_done", "A volume check finished", "info", false},
 	{"system_started", "The NAS started", "info", false},
+	{"power_schedule", "Scheduled power off", "info", false},
+	{"power_action", "Restart or shutdown requested", "info", false},
 }
 
 func kind(id string) Kind {

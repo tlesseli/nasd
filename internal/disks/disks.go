@@ -41,6 +41,7 @@ type Health struct {
 	Pending       int64  `json:"pendingSectors"`       // SMART 197
 	Uncorrectable int64  `json:"uncorrectableSectors"` // SMART 198
 	Error         string `json:"error,omitempty"`
+	Standby       bool   `json:"standby"` // asleep (spun down): values are from before
 }
 
 // Runner executes a command and returns its stdout. Tests replace it with
@@ -195,8 +196,23 @@ func (s *Service) healthOf(ctx context.Context, path string) *Health {
 	defer cancel()
 	// smartctl's exit code is a bit mask that is non-zero for many benign
 	// reasons, so we ignore it and trust the JSON instead.
-	out, _ := s.run(ctx, "smartctl", "--json=c", "-i", "-H", "-A", path)
-	h := parseSmart(out)
+	// -n standby: if the disk is asleep, don't spin it up just to read
+	// its health (that would defeat spin-down). Keep the last values.
+	out, _ := s.run(ctx, "smartctl", "--json=c", "-n", "standby", "-i", "-H", "-A", path)
+	var h *Health
+	if strings.Contains(string(out), "STANDBY mode") {
+		s.mu.Lock()
+		prev := s.health[path]
+		s.mu.Unlock()
+		h = &Health{}
+		if prev != nil {
+			copy := *prev
+			h = &copy
+		}
+		h.Standby = true
+	} else {
+		h = parseSmart(out)
+	}
 
 	s.mu.Lock()
 	s.health[path], s.healthAt[path] = h, time.Now()

@@ -64,3 +64,20 @@ func TestHealthIsCached(t *testing.T) {
 		t.Errorf("smartctl called %d times, want 1", calls)
 	}
 }
+
+func TestSleepingDiskKeepsLastHealth(t *testing.T) {
+	asleep := false
+	s := NewService(func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		if asleep {
+			return []byte(`{"smartctl":{"messages":[{"string":"Device is in STANDBY mode, exit(2)","severity":"information"}],"exit_status":2}}`), nil
+		}
+		return []byte(`{"smart_status":{"passed":true},"temperature":{"current":33}}`), nil
+	})
+	s.healthTTL = 0
+	h := s.healthOf(context.Background(), "/dev/sda")
+	asleep = true
+	h2 := s.healthOf(context.Background(), "/dev/sda")
+	if !h2.Standby || !h2.Supported || !h2.Passed || h2.TemperatureC != 33 || h.Standby {
+		t.Errorf("asleep disk should report its last health: %+v", h2)
+	}
+}

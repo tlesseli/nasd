@@ -155,5 +155,12 @@ func (m *Manager) List() []Snapshot {
 	return out
 }
 
+// Busy reports whether a job is running.
+func (m *Manager) Busy() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.running
+}
+
 // Wait blocks until all started jobs have finished (used by tests).
 func (m *Manager) Wait() { m.wg.Wait() }

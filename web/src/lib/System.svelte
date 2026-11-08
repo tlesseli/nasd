@@ -1,8 +1,35 @@
 <script>
   import { onMount } from 'svelte'
   import { api } from '../api.js'
+  import PowerSettings from './PowerSettings.svelte'
+  import NetworkSettings from './NetworkSettings.svelte'
+  import NameTime from './NameTime.svelte'
+  import Updates from './Updates.svelte'
+  import ConfirmDialog from './ConfirmDialog.svelte'
 
-  let { onSessionLost } = $props()
+  let { hostname, onSessionLost } = $props()
+  let dialog = $state(null)
+
+  function askPower(action) {
+    const restart = action === 'reboot'
+    dialog = {
+      title: restart ? 'Restart the NAS?' : 'Shut down the NAS?',
+      message: restart
+        ? 'Shares are unavailable for a minute or two. Open transfers are interrupted.'
+        : 'The NAS powers off. You will need to press its power button (or use Wake-on-LAN) to start it again.',
+      confirmLabel: restart ? 'Restart' : 'Shut down',
+      onConfirm: async () => {
+        try {
+          await api.post('/api/system/power', { action, force: false })
+        } catch (e) {
+          if (!e.message.includes('disk operation') || !window.confirm(e.message + '\n\nDo it anyway?')) throw e
+          await api.post('/api/system/power', { action, force: true })
+        }
+        dialog = null
+        notice = restart ? 'Restarting… this page reconnects when the NAS is back.' : 'Shutting down…'
+      },
+    }
+  }
 
   let tab = $state('alerts')
   let error = $state('')
@@ -102,9 +129,14 @@
 </script>
 
 <main class="page">
-  <div class="page-head"><h1>System</h1></div>
+  <div class="page-head">
+    <h1>System</h1>
+    <span class="spacer"></span>
+    <button class="secondary" onclick={() => askPower('reboot')}>Restart</button>
+    <button class="secondary danger-text" onclick={() => askPower('poweroff')}>Shut down</button>
+  </div>
   <nav class="tabs" aria-label="System sections">
-    {#each [['alerts', 'Alerts'], ['events', 'Event history'], ['logs', 'Logs']] as [id, label]}
+    {#each [['alerts', 'Alerts'], ['power', 'Power'], ['network', 'Network'], ['nametime', 'Name & time'], ['updates', 'Updates'], ['events', 'Events'], ['logs', 'Logs']] as [id, label]}
       <button class:active={tab === id} onclick={() => (tab = id)}>{label}</button>
     {/each}
   </nav>
@@ -189,6 +221,11 @@
     </form>
   {/if}
 
+  {#if tab === 'power'}<PowerSettings />{/if}
+  {#if tab === 'network'}<NetworkSettings />{/if}
+  {#if tab === 'nametime'}<NameTime {hostname} />{/if}
+  {#if tab === 'updates'}<Updates />{/if}
+
   {#if tab === 'events'}
     <div class="card list">
       {#each events as e, i (i)}
@@ -218,3 +255,5 @@
     <pre class="logs" bind:this={logEl}>{logLines.join('\n')}</pre>
   {/if}
 </main>
+
+{#if dialog}<ConfirmDialog {...dialog} onCancel={() => (dialog = null)} />{/if}

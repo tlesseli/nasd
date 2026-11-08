@@ -20,6 +20,7 @@ import (
 	"readynas/internal/alerts"
 	"readynas/internal/disks"
 	"readynas/internal/health"
+	"readynas/internal/power"
 	"readynas/internal/store"
 	"readynas/internal/volumes"
 )
@@ -29,7 +30,8 @@ type Monitor struct {
 	Volumes *volumes.Service
 	Disks   *disks.Service
 	Alerts  *alerts.Service
-	Sys     string // "/sys"
+	Power   *power.Service // optional
+	Sys     string         // "/sys"
 	Now     func() time.Time
 
 	mu         sync.Mutex        // Tick (monitor goroutine) vs MarkStarted (HTTP handlers)
@@ -37,6 +39,7 @@ type Monitor struct {
 	lastAction map[string]string // volume -> sync action at the previous tick
 	lastFired  map[string]time.Time
 	fanSeen    map[string]bool // fans seen spinning (a fan at 0 RPM from the start may just be unplugged)
+	upsFails   int             // consecutive rounds without an answer from the UPS
 }
 
 func New(st *store.Store, v *volumes.Service, d *disks.Service, a *alerts.Service) *Monitor {
@@ -135,6 +138,10 @@ func (m *Monitor) Tick(ctx context.Context) {
 		}
 	}
 
+	if m.Power != nil {
+		m.checkUPS(ctx, cond)
+	}
+
 	// Conditions that are no longer true.
 	for key, subject := range m.active {
 		if !seen[key] {
@@ -214,6 +221,29 @@ func (m *Monitor) runSchedules(ctx context.Context, st store.State, vols []volum
 		}
 		log.Printf("scheduled check of %s started", v.Name)
 		m.lastAction[v.Name] = "check" // so the end is noticed even if the check is very short
+	}
+}
+
+func (m *Monitor) checkUPS(ctx context.Context, cond func(string, string, string, string)) {
+	u := m.Power.UPSStatus(ctx)
+	if !u.Enabled {
+		return
+	}
+	if u.Error != "" {
+		// The driver needs a few seconds after (re)starting: only complain
+		// after two silent rounds in a row.
+		if m.upsFails++; m.upsFails >= 2 {
+			cond("ups_lost", "ups_lost", "The UPS doesn't answer", u.Error+". Check its USB cable.")
+		}
+		return
+	}
+	m.upsFails = 0
+	if u.LowBattery {
+		cond("ups_low", "ups_low_battery", "UPS battery low: shutting down",
+			fmt.Sprintf("The battery is at %d%%. The NAS shuts down cleanly now to protect your data.", u.Charge))
+	} else if u.OnBattery {
+		cond("ups_on_battery", "ups_on_battery", "Power cut: the NAS runs on its UPS",
+			fmt.Sprintf("Battery at %d%%, about %d minutes left. The NAS will shut down by itself if the battery runs low.", u.Charge, u.RuntimeSec/60))
 	}
 }
 

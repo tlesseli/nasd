@@ -24,9 +24,12 @@ func LoadOrCreate(dir string) (tls.Certificate, error) {
 	certPath, keyPath := filepath.Join(dir, "tls.crt"), filepath.Join(dir, "tls.key")
 	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err == nil {
-		return cert, nil
-	}
-	if !errors.Is(err, os.ErrNotExist) {
+		// Still valid for the current hostname? (It changes from the UI.)
+		host, _ := os.Hostname()
+		if leaf, perr := x509.ParseCertificate(cert.Certificate[0]); perr == nil && leaf.VerifyHostname(host) == nil {
+			return cert, nil
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return tls.Certificate{}, err
 	}
 

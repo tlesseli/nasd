@@ -138,6 +138,46 @@ type Maintenance struct {
 	FsckAtBoot bool `json:"fsckAtBoot"`
 }
 
+// PowerSettings: saving energy and surviving power cuts.
+type PowerSettings struct {
+	SpinDownMinutes int        `json:"spinDownMinutes"` // 0 = disks never sleep
+	Timer           PowerTimer `json:"timer"`
+	UPS             UPS        `json:"ups"`
+	WakeOnLAN       bool       `json:"wakeOnLan"`
+}
+
+// PowerTimer switches the NAS off on a schedule and back on at a time
+// (through the motherboard's real-time clock alarm).
+type PowerTimer struct {
+	Off      Schedule `json:"off"`      // daily or weekly; Kind "" = disabled
+	OnHour   int      `json:"onHour"`   // power back on at the next OnHour:OnMinute
+	OnMinute int      `json:"onMinute"` //
+}
+
+type UPS struct {
+	Enabled bool   `json:"enabled"`
+	Driver  string `json:"driver"` // usbhid-ups (most USB UPS), nutdrv_qx, dummy-ups (simulation)
+}
+
+// NetworkSettings: Managed=false leaves the network to the OS (DHCP).
+type NetworkSettings struct {
+	Managed    bool     `json:"managed"`
+	Interfaces []string `json:"interfaces"` // 1 interface, or 2+ when bonded
+	Bond       string   `json:"bond"`       // "" (no bonding), active-backup, balance-alb, 802.3ad
+	DHCP       bool     `json:"dhcp"`
+	Address    string   `json:"address"` // static: 192.168.1.50/24
+	Gateway    string   `json:"gateway"`
+	DNS        []string `json:"dns"`
+	MTU        int      `json:"mtu"` // 0 = default (1500); 9000 = jumbo frames
+}
+
+// NetworkChange is an applied but not yet confirmed network configuration.
+// If nobody confirms it before the deadline, the previous one comes back.
+type NetworkChange struct {
+	Previous NetworkSettings `json:"previous"`
+	Deadline time.Time       `json:"deadline"`
+}
+
 type BackupRun struct {
 	Status  string    `json:"status"` // "" (never ran), "done", "failed"
 	Started time.Time `json:"started,omitzero"`
@@ -152,14 +192,17 @@ type BackupRun struct {
 // others are file-sharing accounts: they exist as Linux + Samba users and
 // can't log into the UI.
 type State struct {
-	Users        []User                 `json:"users"`
-	Shares       []Share                `json:"shares"`
-	Settings     Settings               `json:"settings"`
-	Backups      []BackupJob            `json:"backups"`
-	NextBackupID int                    `json:"nextBackupId"`
-	Alerts       AlertSettings          `json:"alerts"`
-	Events       []Event                `json:"events"`      // most recent last, capped
-	Maintenance  map[string]Maintenance `json:"maintenance"` // by volume name
+	Users          []User                 `json:"users"`
+	Shares         []Share                `json:"shares"`
+	Settings       Settings               `json:"settings"`
+	Backups        []BackupJob            `json:"backups"`
+	NextBackupID   int                    `json:"nextBackupId"`
+	Alerts         AlertSettings          `json:"alerts"`
+	Events         []Event                `json:"events"`      // most recent last, capped
+	Maintenance    map[string]Maintenance `json:"maintenance"` // by volume name
+	Power          PowerSettings          `json:"power"`
+	Network        NetworkSettings        `json:"network"`
+	NetworkPending *NetworkChange         `json:"networkPending,omitempty"`
 }
 
 func (s *State) FindBackup(id int) *BackupJob {
@@ -276,6 +319,14 @@ func clone(st State) State {
 	out.Alerts.Disabled = slices.Clone(st.Alerts.Disabled)
 	out.Events = slices.Clone(st.Events)
 	out.Maintenance = maps.Clone(st.Maintenance)
+	out.Network.Interfaces = slices.Clone(st.Network.Interfaces)
+	out.Network.DNS = slices.Clone(st.Network.DNS)
+	if st.NetworkPending != nil {
+		p := *st.NetworkPending
+		p.Previous.Interfaces = slices.Clone(p.Previous.Interfaces)
+		p.Previous.DNS = slices.Clone(p.Previous.DNS)
+		out.NetworkPending = &p
+	}
 	out.Backups = make([]BackupJob, len(st.Backups))
 	for i, b := range st.Backups {
 		b.Excludes = slices.Clone(b.Excludes)
