@@ -5,9 +5,14 @@
 #   localhost:8443 -> nasd UI  (https://localhost:8443)
 #   localhost:4445 -> SMB
 # Quit: Ctrl-A then X   (or `sudo poweroff` inside the VM)
+# Diagnostics: the serial console is also logged to vm/console.log, and the
+# QEMU monitor listens on vm/monitor.sock (try: vm/monitor.sh "info status").
 set -euo pipefail
 cd "$(dirname "$0")"
 [[ -f system.qcow2 ]] || { echo "run vm/setup.sh first"; exit 1; }
+if pgrep -f "qemu-system-x86_64.*system.qcow2" >/dev/null; then
+  echo "the VM is already running (pgrep -af qemu-system to find it)"; exit 1
+fi
 
 disks=()
 for i in 1 2 3 4; do
@@ -17,7 +22,10 @@ done
 
 exec qemu-system-x86_64 \
   -machine q35,accel=kvm -boot strict=on -cpu host -smp 1 -m 1024 \
-  -nographic \
+  -display none \
+  -chardev stdio,id=con,mux=on,logfile=console.log,signal=off \
+  -serial chardev:con -mon chardev=con,mode=readline \
+  -monitor unix:monitor.sock,server=on,wait=off \
   -drive file=system.qcow2,if=none,id=sys,format=qcow2 \
   -device virtio-blk-pci,drive=sys,bootindex=0 \
   -drive file=seed.iso,if=virtio,format=raw,readonly=on \
