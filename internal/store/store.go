@@ -38,8 +38,14 @@ type Share struct {
 	GuestRead   bool              `json:"guestRead"` // anyone on the LAN can read, no password
 	RecycleBin  bool              `json:"recycleBin"`
 	TimeMachine bool              `json:"timeMachine"`
-	RsyncRead   bool              `json:"rsyncRead"` // readable by the rsync service (for backups by another machine)
-	Hidden      bool              `json:"hidden"`    // works, but not listed when browsing the NAS
+	// Rsync access through the rsync service: "" (none), "ro" or "rw".
+	// RsyncUser/RsyncPassword protect the module (required for "rw").
+	Rsync         string `json:"rsync"`
+	RsyncUser     string `json:"rsyncUser,omitempty"`
+	RsyncPassword string `json:"rsyncPassword,omitempty"`
+	// FTP: reachable over FTP/FTPS, with the same per-user rights as SMB.
+	FTP    bool `json:"ftp"`
+	Hidden bool `json:"hidden"` // works, but not listed when browsing the NAS
 	// SMBDisabled: not offered over SMB (e.g. an rsync-only backup source).
 	// "Disabled" so that shares saved before this option keep SMB.
 	SMBDisabled bool `json:"smbDisabled"`
@@ -54,6 +60,10 @@ type Share struct {
 type Settings struct {
 	SMBDisabled  bool `json:"smbDisabled"`
 	RsyncEnabled bool `json:"rsyncEnabled"`
+	FTPEnabled   bool `json:"ftpEnabled"`
+	// FTPAllowPlain allows unencrypted FTP (passwords readable on the
+	// network). Off = FTPS (FTP over TLS) is required.
+	FTPAllowPlain bool `json:"ftpAllowPlain"`
 	// Discovery announces the NAS (not single shares) on the network.
 	WSDDisabled     bool       `json:"wsdDisabled"`     // Windows (WS-Discovery, wsdd2)
 	BonjourDisabled bool       `json:"bonjourDisabled"` // macOS (Bonjour / mDNS, Avahi)

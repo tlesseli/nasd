@@ -55,6 +55,8 @@ packages:
   - nut-server     # UPS support (Network UPS Tools)
   - nut-client
   - quota          # disk quotas (setquota, repquota)
+  - vsftpd         # FTP / FTPS
+  - lftp           # FTP client (tests)
   # The cloud kernel has no USB storage drivers: use Debian's standard
   # kernel, the same one the real ReadyNAS will run.
   - linux-image-amd64

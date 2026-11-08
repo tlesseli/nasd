@@ -30,18 +30,28 @@ import (
 const Group = "nasusers"
 
 type Service struct {
-	Store     *store.Store
-	Run       run.Func
-	RunInput  run.InputFunc
-	SmbConf   string // /etc/samba/smb.conf
-	RsyncConf string // /etc/rsyncd.conf
-	AvahiDir  string // /etc/avahi/services
+	Store        *store.Store
+	Run          run.Func
+	RunInput     run.InputFunc
+	SmbConf      string // /etc/samba/smb.conf
+	RsyncConf    string // /etc/rsyncd.conf
+	RsyncSecrets string // /etc/rsyncd.secrets
+	VsftpdConf   string // /etc/vsftpd.conf
+	PamFTP       string // /etc/pam.d/nasd-ftp
+	FTPUserList  string // /etc/nasd-ftp.users
+	FTPRoot      string // /srv/nasftp
+	CertDir      string // /var/lib/nasd (TLS certificate, reused for FTPS)
+	SSHDropIn    string // /etc/ssh/sshd_config.d/nasd.conf
+	ProcMounts   string // /proc/self/mounts
+	AvahiDir     string // /etc/avahi/services
 	// Mounted returns volume name -> mountpoint for mounted volumes.
 	Mounted func(ctx context.Context) (map[string]string, error)
 	// Chown and GroupID touch the real system; tests replace them.
 	Chown   func(path string, uid, gid int) error
 	GroupID func(name string) (int, error)
 	UserID  func(name string) (int, error)
+	// UserHome returns a user's home directory (from /etc/passwd).
+	UserHome func(name string) (string, error)
 	// QuotaMounts lists the mountpoints of volumes with quotas enabled.
 	QuotaMounts func(ctx context.Context) ([]string, error)
 
@@ -51,8 +61,18 @@ type Service struct {
 func NewService(st *store.Store, mounted func(context.Context) (map[string]string, error)) *Service {
 	return &Service{
 		Store: st, Run: run.Exec, RunInput: run.ExecInput,
-		SmbConf: "/etc/samba/smb.conf", RsyncConf: "/etc/rsyncd.conf", AvahiDir: "/etc/avahi/services",
+		SmbConf: "/etc/samba/smb.conf", RsyncConf: "/etc/rsyncd.conf", RsyncSecrets: "/etc/rsyncd.secrets",
+		VsftpdConf: "/etc/vsftpd.conf", PamFTP: "/etc/pam.d/nasd-ftp", FTPUserList: "/etc/nasd-ftp.users",
+		FTPRoot: "/srv/nasftp", CertDir: "/var/lib/nasd", SSHDropIn: "/etc/ssh/sshd_config.d/nasd.conf",
+		ProcMounts: "/proc/self/mounts", AvahiDir: "/etc/avahi/services",
 		Mounted: mounted, Chown: os.Chown, GroupID: lookupGID, UserID: lookupUID,
+		UserHome: func(name string) (string, error) {
+			u, err := user.Lookup(name)
+			if err != nil {
+				return "", err
+			}
+			return u.HomeDir, nil
+		},
 		QuotaMounts: func(context.Context) ([]string, error) { return nil, nil },
 	}
 }
@@ -138,7 +158,7 @@ func (s *Service) CreateUser(ctx context.Context, name, password string) error {
 		"--home-dir", "/nonexistent", "--shell", "/usr/sbin/nologin", "--comment", "NAS user", name); err != nil {
 		return err
 	}
-	if err := s.setSambaPassword(ctx, name, password); err != nil {
+	if err := s.setPasswords(ctx, name, password); err != nil {
 		s.Run(ctx, "userdel", name) // roll back: no half-created users
 		return err
 	}
@@ -268,13 +288,22 @@ func (s *Service) SetPassword(ctx context.Context, name, password string) error 
 	if st := s.Store.Read(); !isShareUser(&st, name) {
 		return fmt.Errorf("user %s not found", name)
 	}
-	return s.setSambaPassword(ctx, name, password)
+	return s.setPasswords(ctx, name, password)
 }
 
-// Samba keeps its own password database (SMB can't use Linux passwords).
-// smbpasswd -s reads the new password twice from stdin.
-func (s *Service) setSambaPassword(ctx context.Context, name, password string) error {
-	_, err := s.RunInput(ctx, password+"\n"+password+"\n", "smbpasswd", "-a", "-s", name)
+// setPasswords sets both passwords of a NAS user:
+//   - Samba keeps its own database (SMB can't use Linux passwords);
+//     smbpasswd -s reads the new password twice from stdin,
+//   - the Linux password is used by FTP (through PAM); chpasswd reads
+//     "user:password" from stdin.
+func (s *Service) setPasswords(ctx context.Context, name, password string) error {
+	if strings.ContainsAny(password, "\n\r") {
+		return errors.New("the password can't contain line breaks")
+	}
+	if _, err := s.RunInput(ctx, password+"\n"+password+"\n", "smbpasswd", "-a", "-s", name); err != nil {
+		return err
+	}
+	_, err := s.RunInput(ctx, name+":"+password+"\n", "chpasswd")
 	return err
 }
 
@@ -307,17 +336,20 @@ var reservedShares = []string{"global", "homes", "printers", "print$", "ipc$"}
 
 // ShareRequest is what the UI sends. Name and Volume are only used on create.
 type ShareRequest struct {
-	Name         string            `json:"name"`
-	Volume       string            `json:"volume"`
-	Description  string            `json:"description"`
-	Access       map[string]string `json:"access"`
-	GuestRead    bool              `json:"guestRead"`
-	RecycleBin   bool              `json:"recycleBin"`
-	TimeMachine  bool              `json:"timeMachine"`
-	RsyncRead    bool              `json:"rsyncRead"`
-	AllowedHosts []string          `json:"allowedHosts"`
-	Hidden       bool              `json:"hidden"`
-	SMBDisabled  bool              `json:"smbDisabled"`
+	Name          string            `json:"name"`
+	Volume        string            `json:"volume"`
+	Description   string            `json:"description"`
+	Access        map[string]string `json:"access"`
+	GuestRead     bool              `json:"guestRead"`
+	RecycleBin    bool              `json:"recycleBin"`
+	TimeMachine   bool              `json:"timeMachine"`
+	Rsync         string            `json:"rsync"` // "", "ro", "rw"
+	RsyncUser     string            `json:"rsyncUser"`
+	RsyncPassword string            `json:"rsyncPassword"` // empty on update = keep
+	FTP           bool              `json:"ftp"`
+	AllowedHosts  []string          `json:"allowedHosts"`
+	Hidden        bool              `json:"hidden"`
+	SMBDisabled   bool              `json:"smbDisabled"`
 }
 
 type ShareInfo struct {
@@ -336,6 +368,7 @@ func (s *Service) Shares(ctx context.Context) ([]ShareInfo, error) {
 		if sh.Access == nil {
 			sh.Access = map[string]string{}
 		}
+		sh.RsyncPassword = "" // never sent to the browser
 		out = append(out, ShareInfo{Share: sh, Available: ok})
 	}
 	return out, nil
@@ -356,6 +389,29 @@ func (s *Service) OnVolume(volume string) []string {
 	return names
 }
 
+// Writing over rsync needs credentials: otherwise anyone on the network
+// could change the share's files.
+func checkRsyncAuth(sh store.Share) error {
+	if sh.Rsync == "rw" && (sh.RsyncUser == "" || sh.RsyncPassword == "") {
+		return errors.New("rsync read & write needs a user name and a password")
+	}
+	if (sh.RsyncUser == "") != (sh.RsyncPassword == "") {
+		return errors.New("rsync: set both a user name and a password, or neither")
+	}
+	return nil
+}
+
+// rsyncUserClash: an rsync user name shared by several shares must have
+// one password (the secrets file holds one line per user).
+func rsyncUserClash(st store.State, share, user, password string) error {
+	for _, sh := range st.Shares {
+		if user != "" && !strings.EqualFold(sh.Name, share) && sh.RsyncUser == user && sh.RsyncPassword != password {
+			return fmt.Errorf("rsync user %s is already used by share %s with another password", user, sh.Name)
+		}
+	}
+	return nil
+}
+
 func isShareUser(st *store.State, name string) bool {
 	u := st.FindUser(name)
 	return u != nil && !u.Admin
@@ -365,6 +421,17 @@ func isShareUser(st *store.State, name string) bool {
 func validateSettings(req ShareRequest, st store.State) error {
 	if len(req.Description) > 100 || strings.ContainsAny(req.Description, "\n\r") {
 		return errors.New("description must be a single line of at most 100 characters")
+	}
+	switch req.Rsync {
+	case "", "ro", "rw":
+	default:
+		return errors.New("rsync access must be none, ro or rw")
+	}
+	if req.RsyncUser != "" && !userRe.MatchString(req.RsyncUser) {
+		return errors.New("rsync user: lowercase letters, digits, - or _")
+	}
+	if req.RsyncPassword != "" && (len(req.RsyncPassword) < minPasswordLength || strings.ContainsAny(req.RsyncPassword, ":\n\r")) {
+		return errors.New("rsync password: at least 8 characters, no ':'")
 	}
 	if req.TimeMachine && req.SMBDisabled {
 		return errors.New("Time Machine works over SMB: keep SMB on for this share")
@@ -415,6 +482,12 @@ func (s *Service) CreateShare(ctx context.Context, req ShareRequest) error {
 	if err := validateSettings(req, st); err != nil {
 		return err
 	}
+	if err := checkRsyncAuth(store.Share{Rsync: req.Rsync, RsyncUser: req.RsyncUser, RsyncPassword: req.RsyncPassword}); err != nil {
+		return err
+	}
+	if err := rsyncUserClash(st, req.Name, req.RsyncUser, req.RsyncPassword); err != nil {
+		return err
+	}
 
 	// Reuses the folder if it exists (e.g. re-creating a deleted share).
 	path := filepath.Join(mnt, req.Name)
@@ -425,7 +498,8 @@ func (s *Service) CreateShare(ctx context.Context, req ShareRequest) error {
 		st.Shares = append(st.Shares, store.Share{
 			Name: req.Name, Volume: req.Volume, Path: path, Description: req.Description,
 			Access: req.Access, GuestRead: req.GuestRead, RecycleBin: req.RecycleBin, TimeMachine: req.TimeMachine,
-			RsyncRead: req.RsyncRead, AllowedHosts: req.AllowedHosts, Hidden: req.Hidden, SMBDisabled: req.SMBDisabled,
+			Rsync: req.Rsync, RsyncUser: req.RsyncUser, RsyncPassword: req.RsyncPassword, FTP: req.FTP,
+			AllowedHosts: req.AllowedHosts, Hidden: req.Hidden, SMBDisabled: req.SMBDisabled,
 		})
 		return nil
 	})
@@ -465,7 +539,17 @@ func (s *Service) UpdateShare(ctx context.Context, name string, req ShareRequest
 		sh := st.FindShare(name)
 		sh.Description, sh.Access, sh.GuestRead = req.Description, req.Access, req.GuestRead
 		sh.RecycleBin, sh.TimeMachine = req.RecycleBin, req.TimeMachine
-		sh.RsyncRead, sh.AllowedHosts, sh.Hidden, sh.SMBDisabled = req.RsyncRead, req.AllowedHosts, req.Hidden, req.SMBDisabled
+		sh.AllowedHosts, sh.Hidden, sh.SMBDisabled, sh.FTP = req.AllowedHosts, req.Hidden, req.SMBDisabled, req.FTP
+		if req.RsyncPassword == "" && req.RsyncUser == sh.RsyncUser {
+			req.RsyncPassword = sh.RsyncPassword // unchanged user, empty field: keep the password
+		}
+		sh.Rsync, sh.RsyncUser, sh.RsyncPassword = req.Rsync, req.RsyncUser, req.RsyncPassword
+		if err := checkRsyncAuth(*sh); err != nil {
+			return err
+		}
+		if err := rsyncUserClash(*st, sh.Name, sh.RsyncUser, sh.RsyncPassword); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -566,8 +650,18 @@ func (s *Service) apply(ctx context.Context) error {
 	}
 
 	// rsync daemon: reads its config at each connection, no reload needed.
-	if err := os.WriteFile(s.RsyncConf, []byte(renderRsyncd(st)), 0o644); err != nil {
+	// The secrets file holds module passwords in clear (rsync requires it):
+	// root-only, and rsync itself refuses it if others can read it.
+	if err := os.WriteFile(s.RsyncSecrets, []byte(renderRsyncSecrets(st)), 0o600); err != nil {
 		return err
+	}
+	os.Chmod(s.RsyncSecrets, 0o600)
+	if err := os.WriteFile(s.RsyncConf, []byte(renderRsyncd(st, s.RsyncSecrets)), 0o644); err != nil {
+		return err
+	}
+	s.applySSHRule(ctx)
+	if err := s.applyFTP(ctx, st); err != nil {
+		return fmt.Errorf("FTP: %w", err)
 	}
 	return s.service(ctx, set.RsyncEnabled, "rsync")
 }
@@ -591,6 +685,7 @@ func (s *Service) SetSettings(ctx context.Context, settings store.Settings) erro
 	if err := s.Store.Update(func(st *store.State) error {
 		st.Settings.SMBDisabled, st.Settings.RsyncEnabled = settings.SMBDisabled, settings.RsyncEnabled
 		st.Settings.WSDDisabled, st.Settings.BonjourDisabled = settings.WSDDisabled, settings.BonjourDisabled
+		st.Settings.FTPEnabled, st.Settings.FTPAllowPlain = settings.FTPEnabled, settings.FTPAllowPlain
 		return nil
 	}); err != nil {
 		return err
@@ -612,6 +707,7 @@ func (s *Service) Status(ctx context.Context) []ServiceStatus {
 		{Unit: "wsdd2", Label: "Windows discovery"},
 		{Unit: "avahi-daemon", Label: "macOS discovery (Bonjour)"},
 		{Unit: "rsync", Label: "Backup server (rsync)"},
+		{Unit: "vsftpd", Label: "FTP"},
 	}
 	for i := range units {
 		out, _ := s.Run(ctx, "systemctl", "is-active", units[i].Unit)

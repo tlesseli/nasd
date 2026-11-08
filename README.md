@@ -34,7 +34,8 @@ UI: https://localhost:8443 (accept the self-signed certificate warning once).
 1. [x] Dev VM with 4 disks
 2. [x] nasd skeleton: HTTPS, first-run admin setup, login, disks + SMART, dashboard
 3. [x] Volumes: RAID 0/1/5/6/10 (mdadm), hot spare, replace disk, expand RAID 5/6
-4. [x] Shares + users (Samba SMB2+), guest access, recycle bin, Time Machine, discovery
+4. [x] Shares + users (Samba SMB2+), guest access, recycle bin, Time Machine, discovery;
+       per-share services: SMB, FTP/FTPS (vsftpd, per-user views), rsync read-only or read-write
 5b. [x] Backups: rsync jobs to/from USB, SSH, rsync server; schedule; rsync service; allowed hosts
 5. [x] Alerts & health: email alerts (contacts, SMTP, test, per-event switches), temperatures/fans,
        SMART details, system logs, volume maintenance (scheduled scrub + parity repair, fs check)

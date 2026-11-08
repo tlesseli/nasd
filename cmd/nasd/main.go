@@ -77,6 +77,7 @@ func main() {
 		return m, nil
 	}
 	shr := shares.NewService(st, mounted)
+	shr.CertDir = *dataDir // FTPS reuses the web interface's certificate
 	shr.QuotaMounts = func(ctx context.Context) ([]string, error) {
 		list, err := vols.List(ctx)
 		var out []string

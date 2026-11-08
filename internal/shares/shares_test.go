@@ -52,15 +52,24 @@ func newTestService(t *testing.T) (*Service, *fakeSystem, string) {
 	f := &fakeSystem{fail: map[string]error{}}
 	s := &Service{
 		Store: st, Run: f.run, RunInput: f.runInput,
-		SmbConf:   filepath.Join(dir, "samba", "smb.conf"),
-		RsyncConf: filepath.Join(dir, "rsyncd.conf"),
-		AvahiDir:  filepath.Join(dir, "avahi"),
+		SmbConf:      filepath.Join(dir, "samba", "smb.conf"),
+		RsyncConf:    filepath.Join(dir, "rsyncd.conf"),
+		RsyncSecrets: filepath.Join(dir, "rsyncd.secrets"),
+		VsftpdConf:   filepath.Join(dir, "vsftpd.conf"),
+		PamFTP:       filepath.Join(dir, "pam-nasd-ftp"),
+		FTPUserList:  filepath.Join(dir, "ftp.users"),
+		FTPRoot:      filepath.Join(dir, "ftp"),
+		CertDir:      dir,
+		SSHDropIn:    filepath.Join(dir, "sshd.d", "nasd.conf"),
+		ProcMounts:   filepath.Join(dir, "mounts"),
+		AvahiDir:     filepath.Join(dir, "avahi"),
 		Mounted: func(context.Context) (map[string]string, error) {
 			return map[string]string{"media": vol}, nil
 		},
 		Chown:       func(string, int, int) error { return nil },
 		GroupID:     func(string) (int, error) { return 1001, nil },
 		UserID:      func(string) (int, error) { return 1002, nil },
+		UserHome:    func(string) (string, error) { return "/nonexistent", nil },
 		QuotaMounts: func(context.Context) ([]string, error) { return []string{vol}, nil },
 	}
 	return s, f, vol
@@ -79,8 +88,8 @@ func TestCreateUser(t *testing.T) {
 	if strings.Contains(all, "secret-password") {
 		t.Error("the password must never appear in command arguments")
 	}
-	if len(f.stdins) != 1 || f.stdins[0] != "secret-password\nsecret-password\n" {
-		t.Errorf("password must go to smbpasswd's stdin twice: %q", f.stdins)
+	if len(f.stdins) != 2 || f.stdins[0] != "secret-password\nsecret-password\n" || f.stdins[1] != "alice:secret-password\n" {
+		t.Errorf("password must go to smbpasswd (twice) and chpasswd through stdin: %q", f.stdins)
 	}
 
 	for _, bad := range []struct{ name, pw string }{
@@ -218,7 +227,7 @@ func TestRsyncAndHosts(t *testing.T) {
 	ctx := context.Background()
 	s.CreateUser(ctx, "alice", "secret-password")
 	if err := s.CreateShare(ctx, ShareRequest{Name: "Docs", Volume: "media", Access: map[string]string{"alice": "rw"},
-		RsyncRead: true, AllowedHosts: []string{"192.168.1.20", "10.0.0.0/8"}}); err != nil {
+		Rsync: "ro", AllowedHosts: []string{"192.168.1.20", "10.0.0.0/8"}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.CreateShare(ctx, ShareRequest{Name: "Bad", Volume: "media", AllowedHosts: []string{"my-pc"}}); err == nil {
@@ -308,7 +317,7 @@ func TestPerShareServicesAndDiscovery(t *testing.T) {
 	ctx := context.Background()
 	s.CreateUser(ctx, "alice", "secret-password")
 	if err := s.CreateShare(ctx, ShareRequest{Name: "Sync", Volume: "media", Access: map[string]string{"alice": "ro"},
-		SMBDisabled: true, RsyncRead: true}); err != nil {
+		SMBDisabled: true, Rsync: "ro"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.CreateShare(ctx, ShareRequest{Name: "TM", Volume: "media", SMBDisabled: true, TimeMachine: true}); err == nil {
@@ -338,5 +347,81 @@ func TestPerShareServicesAndDiscovery(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(f.cmds, "\n"), "systemctl enable --now wsdd2") {
 		t.Error("Windows discovery must come back on")
+	}
+}
+
+func TestRsyncReadWriteAndFTP(t *testing.T) {
+	s, f, vol := newTestService(t)
+	ctx := context.Background()
+	os.MkdirAll(filepath.Dir(s.SSHDropIn), 0o755)
+	t.Cleanup(func() { // FTP homes are locked 0555 (as vsftpd requires): unlock for cleanup
+		filepath.Walk(s.FTPRoot, func(p string, fi os.FileInfo, err error) error { os.Chmod(p, 0o755); return nil })
+	})
+	s.CreateUser(ctx, "alice", "secret-password")
+	s.CreateUser(ctx, "bob", "secret-password")
+
+	if err := s.CreateShare(ctx, ShareRequest{Name: "Drop", Volume: "media", Rsync: "rw"}); err == nil {
+		t.Error("rsync read & write without credentials must be refused")
+	}
+	if err := s.CreateShare(ctx, ShareRequest{Name: "Drop", Volume: "media", Rsync: "rw", RsyncUser: "backup", RsyncPassword: "rsync-secret",
+		Access: map[string]string{"alice": "rw", "bob": "ro"}, FTP: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateShare(ctx, ShareRequest{Name: "Other", Volume: "media", Rsync: "ro", RsyncUser: "backup", RsyncPassword: "different-pw"}); err == nil {
+		t.Error("same rsync user with another password must be refused")
+	}
+	conf, _ := os.ReadFile(s.RsyncConf)
+	secrets, _ := os.ReadFile(s.RsyncSecrets)
+	fi, _ := os.Stat(s.RsyncSecrets)
+	if !strings.Contains(string(conf), "read only = no") || !strings.Contains(string(conf), "auth users = backup") ||
+		string(secrets) != "backup:rsync-secret\n" || fi.Mode().Perm() != 0o600 {
+		t.Errorf("rsync:\n%s\n%q %v", conf, secrets, fi.Mode())
+	}
+	if list, _ := s.Shares(ctx); list[0].RsyncPassword != "" {
+		t.Error("the rsync password must never be returned")
+	}
+	// Update without password keeps it.
+	if err := s.UpdateShare(ctx, "Drop", ShareRequest{Rsync: "rw", RsyncUser: "backup", Access: map[string]string{"alice": "rw", "bob": "ro"}, FTP: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	// FTP on: per-user views, read-only where the user only reads.
+	f.cmds = nil
+	if err := s.SetSettings(ctx, store.Settings{FTPEnabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	all := strings.Join(f.cmds, "\n")
+	src := filepath.Join(vol, "Drop")
+	for _, want := range []string{
+		"mount --bind " + src + " " + filepath.Join(s.FTPRoot, "alice", "Drop"),
+		"mount --bind " + src + " " + filepath.Join(s.FTPRoot, "bob", "Drop"),
+		"mount -o remount,bind,ro " + filepath.Join(s.FTPRoot, "bob", "Drop"),
+		"usermod --home " + filepath.Join(s.FTPRoot, "alice") + " alice",
+		"systemctl enable --now vsftpd",
+	} {
+		if !strings.Contains(all, want) {
+			t.Errorf("missing %q in:\n%s", want, all)
+		}
+	}
+	if strings.Contains(all, "remount,bind,ro "+filepath.Join(s.FTPRoot, "alice")) {
+		t.Error("alice has read & write: her view must not be read-only")
+	}
+	vs, _ := os.ReadFile(s.VsftpdConf)
+	users, _ := os.ReadFile(s.FTPUserList)
+	if !strings.Contains(string(vs), "force_local_logins_ssl=YES") || !strings.Contains(string(vs), "local_root="+s.FTPRoot+"/$USER") ||
+		string(users) != "alice\nbob\n" {
+		t.Errorf("vsftpd:\n%s\nusers: %q", vs, users)
+	}
+	if rule, _ := os.ReadFile(s.SSHDropIn); !strings.Contains(string(rule), "DenyGroups nasusers") {
+		t.Error("NAS users must be kept off SSH")
+	}
+
+	// FTP off: views unmounted, vsftpd stopped.
+	os.WriteFile(s.ProcMounts, []byte("/dev/md127 "+filepath.Join(s.FTPRoot, "alice", "Drop")+" ext4 rw 0 0\n"), 0o644)
+	f.cmds = nil
+	s.SetSettings(ctx, store.Settings{})
+	all = strings.Join(f.cmds, "\n")
+	if !strings.Contains(all, "umount -l "+filepath.Join(s.FTPRoot, "alice", "Drop")) || !strings.Contains(all, "systemctl disable --now vsftpd") {
+		t.Errorf("FTP off:\n%s", all)
 	}
 }

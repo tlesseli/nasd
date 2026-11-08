@@ -11,7 +11,6 @@
   let users = $state([])
   let volumes = $state([])
   let settings = $state({ smbDisabled: false, rsyncEnabled: false, wsdDisabled: false, bonjourDisabled: false })
-  let savingSettings = $state(false)
   let loaded = $state(false)
   let error = $state('')
   let notice = $state('')
@@ -39,19 +38,6 @@
     notice = editing === 'new' ? `Share ${req.name} created.` : `Share ${editing.name} saved.`
     editing = null
     refresh()
-  }
-
-  async function toggle(key, value) {
-    savingSettings = true
-    error = ''
-    try {
-      await api.post('/api/settings', { ...settings, [key]: value })
-      settings = { ...settings, [key]: value }
-    } catch (e) {
-      error = e.message
-    } finally {
-      savingSettings = false
-    }
   }
 
   function askDelete(sh) {
@@ -100,24 +86,11 @@
   {#if notice}<p class="notice">{notice}</p>{/if}
 
   <div class="card list protocols">
-    {#each [
-      { key: 'smbDisabled', inverted: true, label: 'SMB', help: 'file sharing for Windows, macOS, Linux and phones' },
-      { key: 'wsdDisabled', inverted: true, label: 'Windows discovery', help: 'the NAS appears in Windows Explorer under Network (wsdd2)', needsSMB: true },
-      { key: 'bonjourDisabled', inverted: true, label: 'macOS discovery', help: 'the NAS appears in the Finder sidebar, Time Machine finds its shares (Bonjour)', needsSMB: true },
-      { key: 'rsyncEnabled', inverted: false, label: 'rsync', help: 'another machine can back up the shares that allow rsync (read only)' },
-    ] as p (p.key)}
-      {@const on = p.inverted ? !settings[p.key] : settings[p.key]}
-      <div class="row" class:sub={p.needsSMB}>
-        <label class="check">
-          <input type="checkbox" checked={on} disabled={savingSettings || (p.needsSMB && settings.smbDisabled)}
-            onchange={(e) => toggle(p.key, p.inverted ? !e.currentTarget.checked : e.currentTarget.checked)} />
-          <span><strong>{p.label}</strong> <span class="muted small">· {p.help}</span></span>
-        </label>
-      </div>
-    {/each}
-    <p class="hint">Discovery announces the NAS itself; which shares are listed is chosen per share. Each share also chooses its services (SMB, rsync).</p>
     {#if loaded}<HomeFolders />{/if}
   </div>
+  {#if settings.smbDisabled || (!settings.ftpEnabled && shares.some((x) => x.ftp)) || (!settings.rsyncEnabled && shares.some((x) => x.rsync))}
+    <p class="hint">Some services used by shares are switched off: struck-through badges below. Turn them on in <a href="#/system">System → Services</a>.</p>
+  {/if}
 
   {#if editing}
     <ShareForm {settings} share={editing === 'new' ? null : editing} volumes={mountedVolumes} {users}
@@ -145,8 +118,9 @@
               <td>
                 <div class="badges">
                   {#if !sh.smbDisabled}<span class="badge info" class:off={settings.smbDisabled} title={settings.smbDisabled ? 'SMB service is off' : ''}>SMB</span>{/if}
-                  {#if sh.rsyncRead}<span class="badge info" class:off={!settings.rsyncEnabled} title={settings.rsyncEnabled ? '' : 'rsync service is off'}>rsync</span>{/if}
-                  {#if sh.smbDisabled && !sh.rsyncRead}<span class="muted small">none</span>{/if}
+                  {#if sh.rsync}<span class="badge info" class:off={!settings.rsyncEnabled} title={settings.rsyncEnabled ? '' : 'rsync service is off'}>rsync {sh.rsync === 'rw' ? 'r/w' : 'read'}</span>{/if}
+                  {#if sh.ftp}<span class="badge info" class:off={!settings.ftpEnabled} title={settings.ftpEnabled ? '' : 'FTP service is off'}>FTP</span>{/if}
+                  {#if sh.smbDisabled && !sh.rsync && !sh.ftp}<span class="muted small">none</span>{/if}
                 </div>
               </td>
               <td class="right row-actions">
@@ -167,7 +141,8 @@
                       <dt>Windows</dt><dd class="mono copyable">\\{hostname}\{sh.name}</dd>
                       <dt>Mac / Linux</dt><dd class="mono copyable">smb://{hostname}.local/{sh.name}</dd>
                     {/if}
-                    {#if sh.rsyncRead}<dt>rsync</dt><dd class="mono copyable">rsync://{hostname}.local/{sh.name}/</dd>{/if}
+                    {#if sh.rsync}<dt>rsync</dt><dd class="mono copyable">rsync://{sh.rsyncUser ? sh.rsyncUser + '@' : ''}{hostname}.local/{sh.name}/</dd>{/if}
+                    {#if sh.ftp}<dt>FTP</dt><dd class="mono copyable">ftp://{hostname}.local/{sh.name}/</dd>{/if}
                     <dt>Options</dt>
                     <dd>
                       <div class="badges">

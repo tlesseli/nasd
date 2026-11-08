@@ -16,7 +16,10 @@
   let guestRead = $state(share?.guestRead ?? false)
   let recycleBin = $state(share?.recycleBin ?? true)
   let timeMachine = $state(share?.timeMachine ?? false)
-  let rsyncRead = $state(share?.rsyncRead ?? false)
+  let rsync = $state(share?.rsync ?? '')
+  let rsyncUser = $state(share?.rsyncUser ?? '')
+  let rsyncPassword = $state('')
+  let ftp = $state(share?.ftp ?? false)
   let hidden = $state(share?.hidden ?? false)
   let smb = $state(!(share?.smbDisabled ?? false))
   let allowedHosts = $state((share?.allowedHosts ?? []).join(', '))
@@ -31,7 +34,8 @@
     error = ''
     try {
       await onSave({
-        name, volume, description, guestRead, recycleBin, rsyncRead, hidden: smb && hidden,
+        name, volume, description, guestRead, recycleBin, hidden: smb && hidden, ftp,
+        rsync, rsyncUser: rsync ? rsyncUser : '', rsyncPassword: rsync ? rsyncPassword : '',
         smbDisabled: !smb, timeMachine: smb && timeMachine,
         allowedHosts: allowedHosts.split(/[\s,]+/).filter(Boolean),
         access: Object.fromEntries(Object.entries(access).filter(([, a]) => a)),
@@ -122,11 +126,28 @@
       </label>
     {/if}
     <label class="check">
-      <input type="checkbox" bind:checked={rsyncRead} />
-      <span><strong>rsync (read only)</strong> <span class="muted small">· another NAS or computer can back this share up, without a password
-        {settings.rsyncEnabled ? '' : '(the rsync service is off: switch it on above the share list)'}</span></span>
+      <input type="checkbox" bind:checked={ftp} />
+      <span><strong>FTP</strong> <span class="muted small">· users open it with an FTP client, with the same rights as above
+        {settings.ftpEnabled ? '' : '(the FTP service is off: System → Services)'}</span></span>
     </label>
-    {#if !smb && !rsyncRead}<p class="hint">With no service, the share is kept but nobody can reach it over the network.</p>{/if}
+    <div class="check-row">
+      <span><strong>rsync</strong> <span class="muted small">· another NAS or computer can copy from (read) or to (read & write) this share
+        {settings.rsyncEnabled ? '' : '(the rsync service is off: System → Services)'}</span></span>
+      <select bind:value={rsync} aria-label="rsync access">
+        <option value="">Off</option>
+        <option value="ro">Read only</option>
+        <option value="rw">Read & write</option>
+      </select>
+    </div>
+    {#if rsync}
+      <div class="two-cols sub-fields">
+        <label>rsync user {rsync === 'ro' ? '(optional)' : ''} <input bind:value={rsyncUser} autocomplete="off" spellcheck="false" /></label>
+        <label>rsync password {share?.rsyncUser && rsyncUser === share.rsyncUser ? '(empty = keep)' : ''}
+          <input type="password" bind:value={rsyncPassword} autocomplete="new-password" /></label>
+      </div>
+      <p class="hint">rsync has its own login, separate from NAS users. {rsync === 'rw' ? 'Writing requires it.' : 'Without one, anyone on your network can read this share over rsync.'}</p>
+    {/if}
+    {#if !smb && !rsync && !ftp}<p class="hint">With no service, the share is kept but nobody can reach it over the network.</p>{/if}
   </fieldset>
 
   <fieldset>

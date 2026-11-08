@@ -6,6 +6,7 @@
   import NameTime from './NameTime.svelte'
   import Updates from './Updates.svelte'
   import HardwareSettings from './HardwareSettings.svelte'
+  import ServicesSettings from './ServicesSettings.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
 
   let { hostname, onSessionLost } = $props()
@@ -32,7 +33,7 @@
     }
   }
 
-  let tab = $state('alerts')
+  let tab = $state('services')
   let error = $state('')
 
   // ---- alerts
@@ -137,7 +138,7 @@
     <button class="secondary danger-text" onclick={() => askPower('poweroff')}>Shut down</button>
   </div>
   <nav class="tabs" aria-label="System sections">
-    {#each [['alerts', 'Alerts'], ['power', 'Power'], ['network', 'Network'], ['nametime', 'Name & time'], ['updates', 'Updates'], ['hardware', 'Hardware'], ['events', 'Events'], ['logs', 'Logs']] as [id, label]}
+    {#each [['services', 'Services'], ['alerts', 'Alerts'], ['power', 'Power'], ['network', 'Network'], ['nametime', 'Name & time'], ['updates', 'Updates'], ['hardware', 'Hardware'], ['events', 'Events'], ['logs', 'Logs']] as [id, label]}
       <button class:active={tab === id} onclick={() => (tab = id)}>{label}</button>
     {/each}
   </nav>
@@ -222,6 +223,7 @@
     </form>
   {/if}
 
+  {#if tab === 'services'}<ServicesSettings />{/if}
   {#if tab === 'power'}<PowerSettings />{/if}
   {#if tab === 'network'}<NetworkSettings />{/if}
   {#if tab === 'nametime'}<NameTime {hostname} />{/if}

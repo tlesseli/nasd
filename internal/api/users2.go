@@ -92,6 +92,10 @@ func (s *Server) enableQuotas(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.startJob(w, "Enable quotas on "+v.Name, time.Hour, func(ctx context.Context, j *jobs.Job) error {
+		// FTP views are bind mounts of the shares: they would keep the
+		// volume busy. Release them, and recreate them afterwards.
+		s.Shares.ReleaseFTPViews(ctx)
+		defer s.Shares.Apply(context.Background())
 		if err := s.Volumes.EnableQuotas(ctx, j.Run, v); err != nil {
 			return err
 		}

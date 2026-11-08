@@ -218,3 +218,5 @@ label.check.sub, .row.sub { padding-left: 1.6rem; }
 @media (max-width: 520px) {
   .shares-table th:nth-child(3), .shares-table td:nth-child(3) { display: none; }
 }
+.check-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; justify-content: space-between; font-size: 0.9rem; }
+.sub-fields { padding-left: 1.6rem; }
