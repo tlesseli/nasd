@@ -1,26 +1,34 @@
 <script>
   import { onMount } from 'svelte'
-  import { api } from '../api.js'
+  import { api, formatBytes } from '../api.js'
   import ShareForm from './ShareForm.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
   import HomeFolders from './HomeFolders.svelte'
+  import Icon from '../ui/Icon.svelte'
 
-  let { hostname, onSessionLost } = $props()
+  let { hostname, onSessionLost, params = {} } = $props()
 
   let shares = $state([])
   let users = $state([])
   let volumes = $state([])
-  let settings = $state({ smbDisabled: false, rsyncEnabled: false, wsdDisabled: false, bonjourDisabled: false })
+  let settings = $state({})
+  let services = $state([])
   let loaded = $state(false)
   let error = $state('')
   let notice = $state('')
-  let editing = $state(null) // null | 'new' | share object
   let dialog = $state(null)
+  let selected = $state(null) // share name, or '__new__'
+  let filter = $state('all')
+  let text = $state('')
+
+  $effect(() => {
+    if (params.sel) selected = params.sel
+  })
 
   async function refresh() {
     try {
-      ;[shares, users, volumes, settings] = await Promise.all([
-        api.get('/api/shares'), api.get('/api/users'), api.get('/api/volumes'), api.get('/api/settings'),
+      ;[shares, users, volumes, settings, services] = await Promise.all([
+        api.get('/api/shares'), api.get('/api/users'), api.get('/api/volumes'), api.get('/api/settings'), api.get('/api/services'),
       ])
       loaded = true
     } catch (e) {
@@ -30,13 +38,28 @@
   }
   onMount(refresh)
 
-  let mountedVolumes = $derived(volumes.filter((v) => v.mountpoint))
+  const mountedVolumes = $derived(volumes.filter((v) => v.mountpoint))
+  const sel = $derived(shares.find((s) => s.name === selected))
+  const smbSessions = $derived(services.find((s) => s.unit === 'smbd')?.detail ?? '')
+
+  const has = {
+    smb: (s) => !s.smbDisabled,
+    ftp: (s) => s.ftp,
+    rsync: (s) => !!s.rsync,
+  }
+  const counts = $derived({ all: shares.length, smb: shares.filter(has.smb).length, ftp: shares.filter(has.ftp).length, rsync: shares.filter(has.rsync).length })
+  const visible = $derived(shares.filter((s) => (filter === 'all' || has[filter](s)) &&
+    (!text.trim() || (s.name + ' ' + s.description).toLowerCase().includes(text.trim().toLowerCase()))))
 
   async function save(req) {
-    if (editing === 'new') await api.post('/api/shares', req)
-    else await api.post(`/api/shares/${editing.name}`, req)
-    notice = editing === 'new' ? `Share ${req.name} created.` : `Share ${editing.name} saved.`
-    editing = null
+    if (selected === '__new__') {
+      await api.post('/api/shares', req)
+      notice = `Share ${req.name} created.`
+      selected = req.name
+    } else {
+      await api.post(`/api/shares/${selected}`, req)
+      notice = `Share ${selected} saved.`
+    }
     refresh()
   }
 
@@ -48,127 +71,140 @@
       onConfirm: async () => {
         await api.post(`/api/shares/${sh.name}/delete`)
         dialog = null
+        selected = null
         notice = `Share ${sh.name} deleted. Files kept in ${sh.path}.`
         refresh()
       },
     }
   }
 
-  let expanded = $state(null) // name of the share whose details are open
-
-  // Short version for the table: "2 users + guests".
-  function accessSummary(sh) {
-    const n = Object.keys(sh.access).length
-    const parts = n ? [`${n} user${n > 1 ? 's' : ''}`] : []
-    if (sh.guestRead) parts.push('guests')
-    return parts.length ? parts.join(' + ') : 'nobody yet'
+  const accessLabel = { ro: 'read', rw: 'edit' }
+  function summary(sh) {
+    const entries = Object.entries(sh.access)
+    const parts = []
+    const rw = entries.filter(([, a]) => a === 'rw').map(([u]) => u)
+    const ro = entries.filter(([, a]) => a === 'ro').map(([u]) => u)
+    if (rw.length) parts.push(`${rw.length > 2 ? rw.length + ' users' : rw.join(', ')} ${accessLabel.rw}`)
+    if (ro.length) parts.push(`${ro.length > 2 ? ro.length + ' users' : ro.join(', ')} ${accessLabel.ro}`)
+    if (sh.guestRead) parts.push('guests read')
+    return parts.length ? parts.join(' · ') : 'Nobody has access yet'
   }
-
-  const accessLabel = { ro: 'read', rw: 'read & write' }
-  function who(sh) {
-    const parts = Object.entries(sh.access).sort().map(([u, a]) => `${u} (${accessLabel[a]})`)
-    if (sh.guestRead) parts.push('guests (read)')
-    return parts.length ? parts.join(', ') : 'nobody yet'
+  function status(sh) {
+    if (!sh.available) return ['bad', 'Offline']
+    if (sh.smbDisabled && !sh.ftp && !sh.rsync) return ['neutral', 'Disabled']
+    return ['good', 'Online']
   }
+  const svcOff = (k) => (k === 'smb' ? settings.smbDisabled : k === 'ftp' ? !settings.ftpEnabled : !settings.rsyncEnabled)
 </script>
 
 <main class="page">
   <div class="page-head">
-    <h1>Shares</h1>
-    <span class="spacer"></span>
-    {#if !editing}
-      <button onclick={() => (editing = 'new')} disabled={!mountedVolumes.length}
-        title={mountedVolumes.length ? '' : 'Create a volume first'}>New share</button>
-    {/if}
+    <div>
+      <div class="eyebrow">{shares.length} share{shares.length === 1 ? '' : 's'}{smbSessions ? ` · ${smbSessions.replace('sessions', 'SMB sessions')}` : ''}</div>
+      <h1>Shares</h1>
+    </div>
+    <div class="actions">
+      <button onclick={() => (selected = '__new__')} disabled={!mountedVolumes.length} title={mountedVolumes.length ? '' : 'Create a volume first'}>New share</button>
+    </div>
   </div>
 
   {#if error}<p class="error">{error}</p>{/if}
   {#if notice}<p class="notice">{notice}</p>{/if}
 
-  <div class="card list protocols">
-    {#if loaded}<HomeFolders />{/if}
+  <div class="filters">
+    <div class="segmented-btns" role="group" aria-label="Filter by service">
+      {#each [['all', 'All'], ['smb', 'SMB'], ['ftp', 'FTP'], ['rsync', 'rsync']] as [k, label]}
+        <button class:on={filter === k} aria-pressed={filter === k} onclick={() => (filter = k)}>{label} {counts[k]}</button>
+      {/each}
+    </div>
+    <span class="spacer"></span>
+    <input class="filter-input" bind:value={text} placeholder="Filter shares…" aria-label="Filter shares" />
   </div>
-  {#if settings.smbDisabled || (!settings.ftpEnabled && shares.some((x) => x.ftp)) || (!settings.rsyncEnabled && shares.some((x) => x.rsync))}
-    <p class="hint">Some services used by shares are switched off: struck-through badges below. Turn them on in <a href="#/system">System → Services</a>.</p>
-  {/if}
 
-  {#if editing}
-    <ShareForm {settings} share={editing === 'new' ? null : editing} volumes={mountedVolumes} {users}
-      onSave={save} onCancel={() => (editing = null)} />
-  {/if}
+  <div class:with-panel={!!selected}>
+    <div class="stack">
+      <div class="share-grid">
+        {#each visible as sh (sh.name)}
+          {@const [cls, st] = status(sh)}
+          <button class="card share-card" class:selected={selected === sh.name} onclick={() => (selected = selected === sh.name ? null : sh.name)}
+            aria-pressed={selected === sh.name}>
+            <div class="sc-top"><span class="folder"><Icon name="folder" size={16} /></span><span class="spacer"></span><span class="badge {cls}">{st}</span></div>
+            <div class="sc-name">{sh.name}</div>
+            <div class="mono muted small">/{sh.volume}/{sh.name}</div>
+            <div class="small sc-access">{summary(sh)}</div>
+            <div class="sc-foot">
+              <div class="badges">
+                {#if has.smb(sh)}<span class="badge mono" class:off={svcOff('smb')}>SMB</span>{/if}
+                {#if sh.ftp}<span class="badge mono" class:off={svcOff('ftp')}>FTP</span>{/if}
+                {#if sh.rsync}<span class="badge mono" class:off={svcOff('rsync')}>rsync{sh.rsync === 'rw' ? ' r/w' : ''}</span>{/if}
+                {#if !has.smb(sh) && !sh.ftp && !sh.rsync}<span class="muted small">no service</span>{/if}
+              </div>
+              <span class="small">{sh.size ? formatBytes(sh.size.bytes) : '—'}</span>
+            </div>
+          </button>
+        {:else}
+          {#if loaded}
+            <div class="card empty">
+              {#if shares.length}<p class="muted">No share matches this filter.</p>
+              {:else}<p><strong>No shares yet.</strong></p><p class="muted">A share is a folder on a volume that computers on your network can open, like a network drive.</p>{/if}
+            </div>
+          {/if}
+        {/each}
+      </div>
+      <div class="card"><HomeFolders /></div>
+      {#if settings.smbDisabled || (!settings.ftpEnabled && shares.some((x) => x.ftp)) || (!settings.rsyncEnabled && shares.some((x) => x.rsync))}
+        <p class="hint">Struck-through services are switched off for the whole NAS: <a href="#/system/services">System Settings → Services</a>.</p>
+      {/if}
+    </div>
 
-  {#if shares.length}
-    <div class="card table-card">
-      <table class="members shares-table">
-        <thead>
-          <tr><th>Share</th><th>Access</th><th>Services</th><th></th></tr>
-        </thead>
-        <tbody>
-          {#each shares as sh (sh.name)}
-            {@const open = expanded === sh.name}
-            <tr class="share-row" class:open>
-              <td>
-                <button class="link expander" aria-expanded={open} aria-controls="details-{sh.name}"
-                  onclick={() => (expanded = open ? null : sh.name)}>
-                  <span class="chevron" aria-hidden="true">{open ? '▾' : '▸'}</span><strong>{sh.name}</strong>
-                </button>
-                {#if !sh.available}<span class="badge bad">not mounted</span>{/if}
-              </td>
-              <td class="small">{accessSummary(sh)}</td>
-              <td>
-                <div class="badges">
-                  {#if !sh.smbDisabled}<span class="badge info" class:off={settings.smbDisabled} title={settings.smbDisabled ? 'SMB service is off' : ''}>SMB</span>{/if}
-                  {#if sh.rsync}<span class="badge info" class:off={!settings.rsyncEnabled} title={settings.rsyncEnabled ? '' : 'rsync service is off'}>rsync {sh.rsync === 'rw' ? 'r/w' : 'read'}</span>{/if}
-                  {#if sh.ftp}<span class="badge info" class:off={!settings.ftpEnabled} title={settings.ftpEnabled ? '' : 'FTP service is off'}>FTP</span>{/if}
-                  {#if sh.smbDisabled && !sh.rsync && !sh.ftp}<span class="muted small">none</span>{/if}
-                </div>
-              </td>
-              <td class="right row-actions">
-                <button class="link" onclick={() => (editing = sh)} disabled={!!editing}>Edit</button>
-                <button class="link danger-text" onclick={() => askDelete(sh)}>Delete</button>
-              </td>
-            </tr>
-            {#if open}
-              <tr class="details-row" id="details-{sh.name}">
-                <td colspan="4">
-                  <dl class="share-info">
-                    {#if sh.description}<dt>Description</dt><dd>{sh.description}</dd>{/if}
-                    <dt>Access</dt><dd>{who(sh)}</dd>
-                    {#if sh.allowedHosts?.length}<dt>Only from</dt><dd class="mono">{sh.allowedHosts.join(', ')}</dd>{/if}
-                    <dt>Volume</dt><dd>{sh.volume}</dd>
-                    <dt>Folder</dt><dd class="mono">{sh.path}</dd>
-                    {#if !sh.smbDisabled}
-                      <dt>Windows</dt><dd class="mono copyable">\\{hostname}\{sh.name}</dd>
-                      <dt>Mac / Linux</dt><dd class="mono copyable">smb://{hostname}.local/{sh.name}</dd>
-                    {/if}
-                    {#if sh.rsync}<dt>rsync</dt><dd class="mono copyable">rsync://{sh.rsyncUser ? sh.rsyncUser + '@' : ''}{hostname}.local/{sh.name}/</dd>{/if}
-                    {#if sh.ftp}<dt>FTP</dt><dd class="mono copyable">ftp://{hostname}.local/{sh.name}/</dd>{/if}
-                    <dt>Options</dt>
-                    <dd>
-                      <div class="badges">
-                        {#if !sh.smbDisabled && sh.hidden}<span class="badge neutral">Not listed</span>{/if}
-                        {#if sh.timeMachine}<span class="badge neutral">Time Machine</span>{/if}
-                        {#if sh.recycleBin}<span class="badge neutral">Recycle bin</span>{/if}
-                        {#if sh.guestRead}<span class="badge neutral">Guests can read</span>{/if}
-                        {#if !(sh.hidden && !sh.smbDisabled) && !sh.timeMachine && !sh.recycleBin && !sh.guestRead}<span class="muted small">none</span>{/if}
-                      </div>
-                    </dd>
-                  </dl>
-                </td>
-              </tr>
-            {/if}
-          {/each}
-        </tbody>
-      </table>
-    </div>
-  {:else if loaded && !editing}
-    <div class="card empty">
-      <p><strong>No shares yet.</strong></p>
-      <p class="muted">A share is a folder on a volume that computers on your network can open, like a network drive.</p>
-    </div>
-  {/if}
+    {#if selected}
+      <aside class="card panel" aria-label={sel ? `Share ${sel.name}` : 'New share'}>
+        <div class="panel-head">
+          <div>
+            <h2>{sel ? sel.name : 'New share'}</h2>
+            {#if sel && !sel.smbDisabled}<div class="mono muted small copyable">\\{hostname}\{sel.name}</div>{/if}
+          </div>
+          <span class="spacer"></span>
+          <button class="icon-btn" onclick={() => (selected = null)} aria-label="Close"><Icon name="x" size={16} /></button>
+        </div>
+        {#if sel}
+          <div class="grid cols-2 tiles">
+            <div class="tile"><div class="label">Volume</div><div class="value mono">{sel.volume}</div></div>
+            <div class="tile"><div class="label">Size</div><div class="value">{sel.size ? formatBytes(sel.size.bytes) : 'measuring…'}</div></div>
+            <div class="tile"><div class="label">Recycle bin</div><div class="value">{sel.recycleBin ? 'On' : 'Off'}</div></div>
+            <div class="tile"><div class="label">Network browsing</div><div class="value">{sel.smbDisabled ? '—' : sel.hidden ? 'Not listed' : 'Listed'}</div></div>
+          </div>
+          <dl class="share-info small">
+            {#if !sel.smbDisabled}<dt>Mac / Linux</dt><dd class="mono copyable">smb://{hostname}.local/{sel.name}</dd>{/if}
+            {#if sel.ftp}<dt>FTP</dt><dd class="mono copyable">ftp://{hostname}.local/{sel.name}/</dd>{/if}
+            {#if sel.rsync}<dt>rsync</dt><dd class="mono copyable">rsync://{sel.rsyncUser ? sel.rsyncUser + '@' : ''}{hostname}.local/{sel.name}/</dd>{/if}
+            <dt>Folder</dt><dd class="mono">{sel.path}</dd>
+          </dl>
+        {/if}
+        {#key selected}
+          {#if selected === '__new__' || sel}
+            <ShareForm bare share={sel ?? null} volumes={mountedVolumes} {users} {settings}
+              onSave={save} onCancel={() => (selected = null)} onDelete={sel ? () => askDelete(sel) : undefined} />
+          {/if}
+        {/key}
+      </aside>
+    {/if}
+  </div>
 </main>
 
-{#if dialog}
-  <ConfirmDialog {...dialog} onCancel={() => (dialog = null)} />
-{/if}
+{#if dialog}<ConfirmDialog {...dialog} onCancel={() => (dialog = null)} />{/if}
+
+<style>
+  .filters { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 14px; flex-wrap: wrap; }
+  .filter-input { width: 16rem; max-width: 100%; }
+  .share-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+  .share-card { text-align: left; color: var(--text); font-weight: 400; display: flex; flex-direction: column; gap: 0.25rem; cursor: pointer; background: var(--surface); }
+  .share-card:hover:not(:disabled) { filter: none; border-color: var(--border-strong); }
+  .share-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .sc-top { display: flex; align-items: center; margin-bottom: 0.5rem; }
+  .folder { width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); }
+  .sc-name { font-size: 1.05rem; font-weight: 600; }
+  .sc-access { color: var(--text-2); margin: 0.5rem 0 0.7rem; }
+  .sc-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; border-top: 1px solid var(--border); padding-top: 0.7rem; margin-top: auto; }
+  .tiles { gap: 8px; }
+</style>

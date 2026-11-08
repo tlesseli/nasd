@@ -1,177 +1,341 @@
 <script>
   import { onMount } from 'svelte'
-  import { api, formatBytes, formatDuration } from '../api.js'
-  import TextDialog from './TextDialog.svelte'
+  import { api, formatBytes } from '../api.js'
+  import Icon from '../ui/Icon.svelte'
+  import Donut from '../ui/Donut.svelte'
+  import TimeChart from '../ui/TimeChart.svelte'
 
-  let { onSessionLost } = $props()
+  let { user, onSessionLost, problems = [] } = $props()
 
+  const BAYS = 4 // the RND-4A has four drive bays
+  let range = $state('24h')
   let sys = $state(null)
-  let disks = $state([])
   let volumes = $state([])
+  let disks = $state([])
+  let metrics = $state([])
+  let history = $state([])
   let services = $state([])
-  let sensors = $state([])
+  let backups = $state([])
   let events = $state([])
-  let smart = $state(null) // {title, text}
-  let locating = $state([])
+  let sensors = $state([])
   let error = $state('')
 
-  async function refresh() {
+  async function loadSlow() {
     try {
-      ;[sys, disks, volumes, services] = await Promise.all([
-        api.get('/api/system'), api.get('/api/disks'), api.get('/api/volumes'), api.get('/api/services'),
+      ;[sys, volumes, disks, history, services, backups, events, sensors] = await Promise.all([
+        api.get('/api/system'), api.get('/api/volumes'), api.get('/api/disks'), api.get('/api/storage/history'),
+        api.get('/api/services'), api.get('/api/backups'), api.get('/api/events'), api.get('/api/sensors'),
       ])
-      ;[sensors, events] = await Promise.all([api.get('/api/sensors'), api.get('/api/events')])
-      locating = (await api.get('/api/hardware')).locating
-      error = ''
     } catch (e) {
       if (e.status === 401) onSessionLost()
       else error = e.message
     }
   }
-
+  async function loadMetrics() {
+    try {
+      metrics = (await api.get(`/api/metrics?range=${range}`)).points
+    } catch {}
+  }
   onMount(() => {
-    refresh()
-    const timer = setInterval(refresh, 10_000)
-    return () => clearInterval(timer)
+    loadSlow()
+    const a = setInterval(loadSlow, 30_000)
+    const b = setInterval(loadMetrics, 10_000)
+    return () => (clearInterval(a), clearInterval(b))
+  })
+  $effect(() => {
+    range
+    loadMetrics()
   })
 
-  async function showSmart(d) {
-    smart = { title: `SMART report: ${d.name} (${d.model})`, text: 'Loading…' }
-    try {
-      smart.text = (await api.get(`/api/disks/${d.name}/smart`)).report
-    } catch (e) {
-      smart.text = e.message
-    }
+  // ---- storage
+  const used = $derived(volumes.reduce((n, v) => n + (v.usedBytes || 0), 0))
+  const total = $derived(volumes.reduce((n, v) => n + (v.totalBytes || 0), 0))
+  const growth = $derived.by(() => {
+    if (history.length < 2) return null
+    const sum = (p) => Object.values(p.used ?? {}).reduce((a, b) => a + b, 0)
+    const last = history[history.length - 1]
+    const weekAgo = history.find((p) => p.t >= last.t - 7 * 86400) ?? history[0]
+    const span = last.t - weekAgo.t
+    if (span < 86400) return null // less than a day of history: no trend yet
+    const perWeek = ((sum(last) - sum(weekAgo)) / span) * 7 * 86400
+    const months = perWeek > 0 ? (total - used) / perWeek / 4.345 : null
+    return { perWeek, months }
+  })
+
+  // ---- metrics
+  const latest = $derived(metrics[metrics.length - 1])
+  const fmtRate = (b) => (b >= 1e6 ? `${(b / 1e6).toFixed(b >= 1e7 ? 0 : 1)} MB/s` : `${Math.round(b / 1e3)} kB/s`)
+  const peak = (key) => metrics.reduce((m, p) => Math.max(m, p[key] ?? 0), 0)
+  const cpuTemp = $derived(sensors.filter((s) => s.kind === 'temp' && /coretemp|k10temp|cpu/i.test(s.chip + s.label))
+    .reduce((m, s) => Math.max(m, s.value), 0))
+  const timeFormat = $derived(range === '7d' || range === '30d'
+    ? (t) => new Date(t * 1000).toLocaleDateString([], { day: 'numeric', month: 'short' })
+    : undefined)
+
+  // ---- attention
+  function reviewLink(kind) {
+    if (/^(raid|disk|volume|scrub)/.test(kind)) return '#/volumes'
+    if (/^ups/.test(kind)) return '#/system/power'
+    if (/fan|system_hot/.test(kind)) return '#/system/hardware'
+    if (kind === 'quota') return '#/users'
+    if (kind === 'backup_failed') return '#/backups'
+    return '#/system/events'
   }
-  async function locate(d, on) {
-    try {
-      if (on) await api.post(`/api/disks/${d.name}/locate`, { seconds: 60 })
-      else await api.post(`/api/disks/${d.name}/locate/stop`)
-      locating = (await api.get('/api/hardware')).locating
-    } catch (e) {
-      error = e.message
-    }
+  const top = $derived(problems[0])
+
+  // ---- bays
+  const bays = $derived(Array.from({ length: BAYS }, (_, i) => ({ n: i + 1, disk: disks.find((d) => d.bay === i + 1) })))
+  const volumeOf = $derived(Object.fromEntries(volumes.flatMap((v) => v.members.map((m) => [m.disk, v.name]))))
+  function diskState(d) {
+    const h = d?.health
+    if (!h || !h.supported) return 'off'
+    if (!h.passed) return 'bad'
+    if (h.reallocatedSectors + h.pendingSectors + h.uncorrectableSectors > 0) return 'warn'
+    return ''
   }
 
-  const sevClass = { critical: 'bad', warning: 'warn', info: 'neutral' }
-
-  // One word for the state of a disk, used for the colored badge.
-  function status(d) {
-    const h = d.health
-    if (!h || !h.supported) return { cls: 'neutral', text: 'No SMART' }
-    if (!h.passed) return { cls: 'bad', text: 'Failing' }
-    if (h.reallocatedSectors > 0 || h.pendingSectors > 0 || h.uncorrectableSectors > 0)
-      return { cls: 'warn', text: 'Warning' }
-    return { cls: 'good', text: 'Healthy' }
+  // ---- misc
+  const greeting = $derived.by(() => {
+    const h = new Date().getHours()
+    return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'
+  })
+  function ago(t) {
+    const s = (Date.now() - new Date(t)) / 1000
+    if (s < 60) return 'just now'
+    if (s < 3600) return `${Math.floor(s / 60)} min ago`
+    if (s < 86400) return `Today ${new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    return new Date(t).toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ' + new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
-
-  let memUsedPct = $derived(sys ? Math.round(100 * (1 - sys.memAvailableBytes / sys.memTotalBytes)) : 0)
-  // disk name -> volume name, to show which volume each disk belongs to
-  let volumeOf = $derived(Object.fromEntries(volumes.flatMap((v) => v.members.map((m) => [m.disk, v.name]))))
-  let dataDisks = $derived(disks.filter((d) => d.role === 'data'))
-  let systemDisks = $derived(disks.filter((d) => d.role === 'system'))
+  const shortName = { smbd: 'SMB', wsdd2: 'Win discovery', 'avahi-daemon': 'Bonjour', rsync: 'rsync', vsftpd: 'FTP', ups: 'UPS' }
+  const sevDot = { critical: 'bad', warning: 'warn', info: '' }
+  const levelText = (v) => `${v.level.replace('raid', 'RAID ')} · ${v.members.length} disk${v.members.length > 1 ? 's' : ''}`
+  const statusBadge = (s) => ({ healthy: ['good', 'Healthy'], degraded: ['warn', 'Degraded'], failed: ['bad', 'Failed'],
+    rebuilding: ['info', 'Rebuilding'], syncing: ['info', 'Syncing'], checking: ['info', 'Checking'], reshaping: ['info', 'Expanding'] }[s] ?? ['neutral', s])
 </script>
 
 <main class="page">
+  <div class="page-head">
+    <div>
+      <div class="eyebrow">{greeting}, {user}</div>
+      <h1>Overview</h1>
+    </div>
+    <div class="actions add">
+      <div class="segmented-btns" role="group" aria-label="Time range">
+        {#each ['1h', '24h', '7d', '30d'] as r}
+          <button class:on={range === r} aria-pressed={range === r} onclick={() => (range = r)}>{r}</button>
+        {/each}
+      </div>
+      <a class="icon-btn bell" href="#/system/events" aria-label="Events" title="Events">
+        <Icon name="bell" size={17} />{#if problems.length}<span class="bell-dot"></span>{/if}
+      </a>
+    </div>
+  </div>
+
   {#if error}<p class="error">{error}</p>{/if}
 
-  {#if sys}
-    <section class="stats">
-      <div class="stat"><span class="label">Uptime</span><span class="value">{formatDuration(sys.uptimeSeconds)}</span></div>
-      <div class="stat"><span class="label">Load (1 min)</span><span class="value">{sys.load?.[0]?.toFixed(2)}</span></div>
-      <div class="stat">
-        <span class="label">Memory</span>
-        <span class="value">{memUsedPct}%</span>
-        <span class="meter"><span style="width: {memUsedPct}%"></span></span>
-        <span class="muted small">{formatBytes(sys.memTotalBytes - sys.memAvailableBytes)} of {formatBytes(sys.memTotalBytes)}</span>
-      </div>
-      <div class="stat"><span class="label">System</span><span class="value small">{sys.cpu}</span><span class="muted small">Linux {sys.kernel}</span></div>
-    </section>
-  {/if}
-
-  {#if events.some((e) => e.severity !== 'info')}
-    {@const recent = events.filter((e) => e.severity !== 'info').slice(0, 3)}
-    <h2>Recent alerts <a class="small" href="#/system">all events</a></h2>
-    <div class="card list">
-      {#each recent as e, i (i)}
-        <div class="row">
-          <span class="badge {sevClass[e.severity]}">{e.severity}</span>
-          <strong>{e.subject}</strong>
-          <span class="spacer"></span>
-          <span class="muted small">{new Date(e.time).toLocaleString()}</span>
-        </div>
-      {/each}
-    </div>
-  {/if}
-
-  <h2>Temperatures and fans</h2>
-  <div class="card list">
-    {#each sensors as s (s.id)}
-      {@const hot = s.kind === 'temp' && s.limit && s.value >= s.limit}
-      {@const stopped = s.kind === 'fan' && s.value === 0}
-      <div class="row">
-        <span class="badge {hot || stopped ? 'bad' : 'good'}">{s.kind === 'temp' ? `${s.value.toFixed(0)} °C` : `${s.value} RPM`}</span>
-        <strong>{s.label}</strong>
-        <span class="muted small">{s.chip}{s.limit ? ` · limit ${s.kind === 'temp' ? s.limit + ' °C' : s.limit + ' RPM'}` : ''}</span>
-      </div>
-    {:else}
-      <p class="muted small">No hardware sensors found (normal in a virtual machine; the real ReadyNAS reports its fan and temperatures).</p>
-    {/each}
-  </div>
-
-  {#if services.length}
-    <h2>Services</h2>
-    <div class="card list">
-      {#each services as svc (svc.unit)}
-        <div class="row">
-          <span class="badge {svc.active ? 'good' : 'bad'}">{svc.active ? 'Running' : 'Stopped'}</span>
-          <strong>{svc.label}</strong>
-          <span class="muted small mono">{svc.unit}</span>
-        </div>
-      {/each}
-    </div>
-  {/if}
-
-  <h2>Data disks <span class="muted">({dataDisks.length})</span></h2>
-  <div class="bays">
-    {#each dataDisks as d (d.path)}
-      {@const s = status(d)}
-      <article class="card disk">
-        <div class="disk-head">
-          <strong>{d.name}</strong>
-          <span class="badge {s.cls}">{s.text}</span>
-        </div>
-        <div class="disk-size">{formatBytes(d.sizeBytes)}</div>
-        <dl>
-          <dt>Model</dt><dd>{d.model || '—'}</dd>
-          <dt>Serial</dt><dd class="mono">{d.serial || '—'}</dd>
-          <dt>In use as</dt><dd>{volumeOf[d.name] ? `volume ${volumeOf[d.name]}` : d.usage || 'free'}</dd>
-          {#if d.health?.supported}
-            <dt>Temperature</dt><dd>{d.health.temperatureC ? `${d.health.temperatureC} °C` : '—'}</dd>
-            <dt>Power-on</dt><dd>{d.health.powerOnHours.toLocaleString()} h</dd>
-            <dt>Bad sectors</dt><dd>{d.health.reallocatedSectors + d.health.pendingSectors}</dd>
-          {/if}
-        </dl>
-        <div class="disk-actions">
-          {#if d.health?.supported}
-            <button class="link small" onclick={() => showSmart(d)}>SMART details</button>
-          {/if}
-          {#if locating.includes(d.name)}
-            <button class="link small" onclick={() => locate(d, false)}>Stop blinking</button>
-            <span class="badge info blink">Blinking</span>
+  <div class="grid ov-top">
+    <section class="card storage">
+      <Donut percent={total ? (100 * used) / total : 0} />
+      <div class="storage-body">
+        <div class="muted small">Storage capacity</div>
+        <div class="big">{formatBytes(used)} <span class="muted">of {formatBytes(total)}</span></div>
+        <div class="muted small">
+          {#if growth}
+            {growth.perWeek >= 0 ? '+' : '−'}{formatBytes(Math.abs(growth.perWeek))} this week{growth.months ? ` · full in ~${Math.max(1, Math.round(growth.months))} months at this rate` : ''}
           {:else}
-            <button class="link small" onclick={() => locate(d, true)} title="Makes the disk's activity light blink for 60 s">Locate</button>
+            Growth appears after a day of history.
           {/if}
         </div>
-      </article>
+        <div class="pools">
+          {#each volumes as v (v.device)}
+            {@const [cls, txt] = statusBadge(v.status)}
+            <a class="pool" href="#/volumes?sel={encodeURIComponent(v.name)}">
+              <span class="dot" class:warn={cls === 'warn'} class:bad={cls === 'bad'}></span>
+              <span class="mono">{v.name}</span>
+              <span class="muted small hide-sm">{levelText(v)}</span>
+              <span class="spacer"></span>
+              <span class="small">{formatBytes(v.usedBytes)} / {formatBytes(v.totalBytes || v.sizeBytes)}</span>
+              <span class="badge {cls}">{txt}</span>
+            </a>
+          {:else}
+            <a class="pool" href="#/volumes"><span class="muted small">No volume yet: create one</span></a>
+          {/each}
+        </div>
+      </div>
+    </section>
+
+    {#if top}
+      <section class="card attention" class:critical={top.severity === 'critical'}>
+        <div class="card-head"><span class="att-icon"><Icon name="alert" size={16} /></span><h2>Needs attention</h2></div>
+        <h3>{top.subject}</h3>
+        <p class="small att-body">{top.body}</p>
+        <div class="add att-actions">
+          <a class="btn-like" href={reviewLink(top.kind)}>Review</a>
+          {#if problems.length > 1}<a class="small" href="#/system/events">+{problems.length - 1} more</a>{/if}
+        </div>
+      </section>
     {:else}
-      <p class="muted">No data disks detected.</p>
-    {/each}
+      <section class="card all-good">
+        <div class="card-head"><span class="ok-icon"><Icon name="check" size={16} /></span><h2>All good</h2></div>
+        <p class="small muted">No problem detected: volumes are redundant, disks report healthy{services.some((s) => s.unit === 'ups') ? ', the UPS is on mains power' : ''}.</p>
+      </section>
+    {/if}
   </div>
 
-  {#if systemDisks.length}
-    <p class="muted small">System disk: {systemDisks.map((d) => `${d.name} (${formatBytes(d.sizeBytes)})`).join(', ')}</p>
-  {/if}
+  <div class="grid cols-3 ov-row">
+    <section class="card metric">
+      <div class="card-head"><span class="muted small">CPU</span><span class="spacer"></span>
+        <span class="muted small">{sys?.cores ?? '–'} core{sys?.cores === 1 ? '' : 's'}{cpuTemp ? ` · ${Math.round(cpuTemp)} °C` : ''}</span></div>
+      <div class="value">{latest ? Math.round(latest.cpu) : '–'} <small>%</small></div>
+      <TimeChart compact height={54} points={metrics} series={[{ key: 'cpu', label: 'CPU', color: 'var(--series-read)' }]} format={(v) => `${v.toFixed(0)} %`} />
+    </section>
+    <section class="card metric">
+      <div class="card-head"><span class="muted small">Memory</span><span class="spacer"></span>
+        <span class="muted small">{sys ? formatBytes(sys.memTotalBytes) : ''} installed</span></div>
+      <div class="value">{latest ? formatBytes(latest.memUsed) : '–'} <small>used</small></div>
+      <TimeChart compact height={54} points={metrics} series={[{ key: 'memUsed', label: 'Memory', color: 'var(--series-read)' }]} format={formatBytes} />
+    </section>
+    <section class="card metric">
+      <div class="card-head"><span class="muted small">Network</span><span class="spacer"></span>
+        <span class="muted small">out {latest ? fmtRate(latest.netTx) : '–'}</span></div>
+      <div class="value">{latest ? fmtRate(latest.netRx).split(' ')[0] : '–'} <small>{latest ? fmtRate(latest.netRx).split(' ')[1] : ''} in</small></div>
+      <TimeChart compact height={54} points={metrics} series={[{ key: 'netRx', label: 'In', color: 'var(--series-read)' }]} format={fmtRate} />
+    </section>
+  </div>
+
+  <div class="grid ov-top ov-row">
+    <section class="card">
+      <div class="card-head">
+        <h2>Disk throughput</h2>
+        <span class="spacer"></span>
+        <span class="legend"><span class="key" style="background: var(--series-read)"></span>Read · peak {fmtRate(peak('diskRead'))}</span>
+        <span class="legend"><span class="key" style="background: var(--series-write)"></span>Write · peak {fmtRate(peak('diskWrite'))}</span>
+      </div>
+      <TimeChart height={210} points={metrics} {timeFormat} format={fmtRate}
+        series={[{ key: 'diskRead', label: 'Read', color: 'var(--series-read)' }, { key: 'diskWrite', label: 'Write', color: 'var(--series-write)' }]} />
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Drive bays</h2><span class="spacer"></span>
+        <span class="muted small">{bays.filter((b) => b.disk).length} of {BAYS} in use</span></div>
+      <div class="bays">
+        {#each bays as b (b.n)}
+          {@const st = diskState(b.disk)}
+          <a class="bay" class:warn={st === 'warn'} class:bad={st === 'bad'} class:empty={!b.disk}
+            href={b.disk ? `#/volumes?disk=${b.disk.name}` : '#/volumes'}>
+            <span class="dot" class:warn={st === 'warn'} class:bad={st === 'bad'} class:off={st === 'off'} class:empty={!b.disk}></span>
+            <span class="bay-n">{b.n}</span>
+            {#if b.disk}
+              <span class="bay-what">{volumeOf[b.disk.name] ?? 'free'} · {b.disk.model || b.disk.name}{st === 'warn' ? ' · SMART warning' : st === 'bad' ? ' · failing' : ''}</span>
+              <span class="spacer"></span>
+              <span class="small">{b.disk.health?.temperatureC ? `${b.disk.health.temperatureC}°` : ''}</span>
+            {:else}
+              <span class="muted">Empty</span>
+            {/if}
+          </a>
+        {/each}
+      </div>
+    </section>
+  </div>
+
+  <div class="grid cols-3 ov-row">
+    <section class="card">
+      <div class="card-head"><h2>Services</h2><a class="small" href="#/system/services">Configure</a></div>
+      <div class="svc-grid">
+        {#each services as s (s.unit)}
+          <div class="tile">
+            <div class="svc-name"><span class="dot" class:off={!s.active}></span>{shortName[s.unit] ?? s.label}</div>
+            <div class="muted small">{s.detail || (s.active ? 'Running' : 'Stopped')}</div>
+          </div>
+        {/each}
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Data protection</h2><a class="small" href="#/backups">Manage</a></div>
+      <div class="list">
+        {#each backups.slice(0, 4) as b (b.id)}
+          <div class="row">
+            <span class="prot-icon"><Icon name={b.target.kind === 'usb' ? 'usb' : 'refresh'} size={15} /></span>
+            <div class="grow"><div>{b.name}</div><div class="muted small">{b.lastRun.status ? ago(b.lastRun.started) + (b.lastRun.summary ? ' · ' + b.lastRun.summary : '') : 'Never ran'}</div></div>
+            <span class="spacer"></span>
+            <span class="badge {b.lastRun.status === 'done' ? 'good' : b.lastRun.status === 'failed' ? 'bad' : 'neutral'}">
+              {b.lastRun.status === 'done' ? 'OK' : b.lastRun.status === 'failed' ? 'Failed' : '—'}</span>
+          </div>
+        {/each}
+        {#each volumes.filter((v) => v.level !== 'raid0') as v (v.device)}
+          <div class="row">
+            <span class="prot-icon"><Icon name="shield" size={15} /></span>
+            <div class="grow"><div>Volume check · {v.name}</div>
+              <div class="muted small">{v.lastSyncAction === 'check' || v.lastSyncAction === 'repair' ? `${v.mismatchCount} inconsistencies` : 'Not checked since start'}</div></div>
+            <span class="spacer"></span>
+            <span class="badge {v.lastSyncAction === 'check' && v.mismatchCount === 0 ? 'good' : v.mismatchCount > 0 ? 'warn' : 'neutral'}">
+              {v.lastSyncAction === 'check' && v.mismatchCount === 0 ? 'OK' : v.mismatchCount > 0 ? 'Found issues' : '—'}</span>
+          </div>
+        {/each}
+        {#if !backups.length}<p class="muted small">No backup job yet. RAID isn't a backup: <a href="#/backups">set one up</a>.</p>{/if}
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Activity</h2><a class="small" href="#/system/events">View all</a></div>
+      <ol class="activity">
+        {#each events.slice(0, 5) as e, i (i)}
+          <li><span class="dot {sevDot[e.severity]}" class:info={e.severity === 'info'}></span>
+            <div><div class="small">{e.subject}</div><div class="muted small">{ago(e.time)}</div></div></li>
+        {:else}
+          <li class="muted small">No events yet.</li>
+        {/each}
+      </ol>
+    </section>
+  </div>
 </main>
 
-{#if smart}<TextDialog title={smart.title} text={smart.text} onClose={() => (smart = null)} />{/if}
+<style>
+  .ov-top { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+  .ov-row { margin-top: 14px; }
+  .storage { display: flex; gap: 1.5rem; align-items: center; }
+  .storage-body { flex: 1; min-width: 0; }
+  .big { font-size: 1.85rem; font-weight: 600; letter-spacing: -0.02em; }
+  .big .muted { font-size: 0.9rem; font-weight: 400; }
+  .pools { display: flex; flex-direction: column; gap: 6px; margin-top: 0.8rem; }
+  .pool { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.7rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); text-decoration: none; }
+  .pool:hover { border-color: var(--border-strong); text-decoration: none; }
+  .attention { border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: linear-gradient(var(--warn-bg), var(--warn-bg)), var(--surface); display: flex; flex-direction: column; }
+  .attention.critical { border-color: color-mix(in srgb, var(--bad) 45%, transparent); background: linear-gradient(var(--bad-bg), var(--bad-bg)), var(--surface); }
+  .attention h2 { color: var(--warn); }
+  .attention.critical h2 { color: var(--bad); }
+  .att-icon, .ok-icon { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--warn-bg); color: var(--warn); }
+  .attention.critical .att-icon { background: var(--bad-bg); color: var(--bad); }
+  .ok-icon { background: var(--good-bg); color: var(--good); }
+  .att-body { color: var(--text-2); }
+  .att-actions { margin-top: auto; padding-top: 0.75rem; }
+  .btn-like { padding: 0.45rem 0.95rem; border-radius: var(--radius-sm); background: var(--warn); color: #1a1205; font-weight: 500; text-decoration: none; }
+  .attention.critical .btn-like { background: var(--bad); color: #fff; }
+  .metric .value { font-size: 1.6rem; font-weight: 600; letter-spacing: -0.02em; margin: -0.3rem 0 0.4rem; font-variant-numeric: tabular-nums; }
+  .metric .value small { font-size: 0.82rem; color: var(--muted); font-weight: 500; }
+  .metric .card-head { margin-bottom: 0.6rem; }
+  .legend { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--text-2); }
+  .key { width: 10px; height: 10px; border-radius: 3px; }
+  .bays { display: flex; flex-direction: column; gap: 6px; }
+  .bay { display: flex; align-items: center; gap: 0.6rem; padding: 0.45rem 0.65rem; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--border); font-size: 0.85rem; color: var(--text); text-decoration: none; }
+  .bay:hover { border-color: var(--border-strong); text-decoration: none; }
+  .bay.warn { background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+  .bay.bad { background: var(--bad-bg); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+  .bay.empty { background: none; border-style: dashed; }
+  .bay-n { width: 1rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .bay-what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .svc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .svc-name { display: flex; align-items: center; gap: 0.45rem; font-weight: 500; }
+  .prot-icon { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); flex: none; }
+  .grow { flex: 1; min-width: 0; }
+  .card :global(.list .row) { flex-wrap: nowrap; }
+  .activity { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+  .activity li { display: flex; gap: 0.65rem; align-items: flex-start; }
+  .activity .dot { margin-top: 0.4rem; }
+  .activity .dot.info { background: var(--accent); }
+  .bell { position: relative; border: 1px solid var(--border); background: var(--surface); width: 34px; height: 34px; }
+  .bell-dot { position: absolute; top: 6px; right: 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+  @media (max-width: 1100px) { .ov-top { grid-template-columns: 1fr; } }
+  @media (max-width: 600px) { .storage { flex-direction: column; align-items: stretch; } .svc-grid { grid-template-columns: 1fr; } }
+</style>

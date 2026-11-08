@@ -56,7 +56,8 @@ func (s *Service) QuotaUsage(ctx context.Context, v Volume) ([]QuotaUse, error) 
 	if !v.Quotas {
 		return nil, errors.New("quotas are not enabled on " + v.Name)
 	}
-	out, err := s.Run(ctx, "repquota", "-u", "-O", "csv", v.Mountpoint)
+	// -v: also list users who use nothing yet (otherwise their limit is invisible).
+	out, err := s.Run(ctx, "repquota", "-v", "-u", "-O", "csv", v.Mountpoint)
 	if err != nil {
 		return nil, err
 	}

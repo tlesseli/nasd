@@ -190,7 +190,7 @@ func summarize(out string) string {
 	}
 	var parts []string
 	if v, ok := found["Number of regular files transferred"]; ok {
-		parts = append(parts, v+" files copied")
+		parts = append(parts, v+map[bool]string{true: " file copied", false: " files copied"}[v == "1"])
 	}
 	if v, ok := found["Total transferred file size"]; ok {
 		parts = append(parts, strings.TrimSuffix(v, " bytes")+" transferred")

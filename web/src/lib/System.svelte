@@ -3,13 +3,21 @@
   import { api } from '../api.js'
   import PowerSettings from './PowerSettings.svelte'
   import NetworkSettings from './NetworkSettings.svelte'
-  import NameTime from './NameTime.svelte'
+  import GeneralSettings from './GeneralSettings.svelte'
+  import Icon from '../ui/Icon.svelte'
   import Updates from './Updates.svelte'
   import HardwareSettings from './HardwareSettings.svelte'
   import ServicesSettings from './ServicesSettings.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
 
-  let { hostname, onSessionLost } = $props()
+  let { hostname, onSessionLost, sectionId = 'general' } = $props()
+
+  // Sub-sections, each with its own URL (#/system/alerts...).
+  const sections = [
+    ['general', 'General', 'server'], ['network', 'Network', 'network'], ['services', 'Services', 'folder'],
+    ['alerts', 'Alerts', 'bell'], ['power', 'Power & UPS', 'power'], ['hardware', 'Hardware', 'drive'],
+    ['updates', 'Software update', 'refresh'], ['events', 'Events & logs', 'file'], ['restart', 'Restart / shut down', 'power'],
+  ]
   let dialog = $state(null)
 
   function askPower(action) {
@@ -33,7 +41,7 @@
     }
   }
 
-  let tab = $state('services')
+  const tab = $derived(sections.some(([id]) => id === sectionId) ? sectionId : 'general')
   let error = $state('')
 
   // ---- alerts
@@ -123,8 +131,10 @@
     }
   }
   $effect(() => {
-    if (tab === 'logs') loadLogs()
-    if (tab === 'events') api.get('/api/events').then((e) => (events = e)).catch(() => {})
+    if (tab === 'events') {
+      loadLogs()
+      api.get('/api/events').then((e) => (events = e)).catch(() => {})
+    }
   })
 
   const sevClass = { critical: 'bad', warning: 'warn', info: 'neutral' }
@@ -132,17 +142,18 @@
 
 <main class="page">
   <div class="page-head">
-    <h1>System</h1>
-    <span class="spacer"></span>
-    <button class="secondary" onclick={() => askPower('reboot')}>Restart</button>
-    <button class="secondary danger-text" onclick={() => askPower('poweroff')}>Shut down</button>
+    <div><div class="eyebrow">Device-wide configuration</div><h1>System Settings</h1></div>
   </div>
-  <nav class="tabs" aria-label="System sections">
-    {#each [['services', 'Services'], ['alerts', 'Alerts'], ['power', 'Power'], ['network', 'Network'], ['nametime', 'Name & time'], ['updates', 'Updates'], ['hardware', 'Hardware'], ['events', 'Events'], ['logs', 'Logs']] as [id, label]}
-      <button class:active={tab === id} onclick={() => (tab = id)}>{label}</button>
-    {/each}
-  </nav>
 
+  <div class="settings">
+    <nav class="subnav" aria-label="Settings sections">
+      {#each sections as [id, label, icon] (id)}
+        <button class:active={tab === id} aria-current={tab === id ? 'page' : undefined} onclick={() => (location.hash = `/system/${id}`)}>
+          <Icon name={icon} size={15} /> {label}
+        </button>
+      {/each}
+    </nav>
+    <div class="stack settings-body">
   {#if error}<p class="error">{error}</p>{/if}
   {#if notice}<p class="notice">{notice}</p>{/if}
 
@@ -226,7 +237,17 @@
   {#if tab === 'services'}<ServicesSettings />{/if}
   {#if tab === 'power'}<PowerSettings />{/if}
   {#if tab === 'network'}<NetworkSettings />{/if}
-  {#if tab === 'nametime'}<NameTime {hostname} />{/if}
+  {#if tab === 'general'}<GeneralSettings {hostname} />{/if}
+  {#if tab === 'restart'}
+    <section class="card danger-zone">
+      <div class="card-head"><h2>Restart or shut down</h2></div>
+      <p class="small muted">Connected computers lose their shares while the NAS is down. Running disk operations are protected: you'll be asked before interrupting one.</p>
+      <div class="actions">
+        <button class="secondary" onclick={() => askPower('reboot')}>Restart</button>
+        <button class="danger" onclick={() => askPower('poweroff')}>Shut down</button>
+      </div>
+    </section>
+  {/if}
   {#if tab === 'updates'}<Updates />{/if}
   {#if tab === 'hardware'}<HardwareSettings />{/if}
 
@@ -248,7 +269,8 @@
     </div>
   {/if}
 
-  {#if tab === 'logs'}
+  {#if tab === 'events'}
+    <h2 class="logs-title">Logs</h2>
     <div class="add">
       <select bind:value={logSource} onchange={loadLogs} aria-label="Log source">
         {#each logSources as s}<option>{s}</option>{/each}
@@ -258,6 +280,8 @@
     </div>
     <pre class="logs" bind:this={logEl}>{logLines.join('\n')}</pre>
   {/if}
+    </div>
+  </div>
 </main>
 
 {#if dialog}<ConfirmDialog {...dialog} onCancel={() => (dialog = null)} />{/if}

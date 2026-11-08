@@ -2,7 +2,8 @@
   import { untrack } from 'svelte'
 
   // Create or edit a share. `share` is null for a new one.
-  let { share: shareProp = null, volumes: volumesProp, users: usersProp, settings = {}, onSave, onCancel } = $props()
+  // bare: rendered inside another card (the Shares side panel).
+  let { share: shareProp = null, volumes: volumesProp, users: usersProp, settings = {}, bare = false, onSave, onCancel, onDelete } = $props()
 
   // The form works on a snapshot taken when it opens: the page refreshing its
   // lists in the background must not reset what you're typing.
@@ -47,8 +48,8 @@
   }
 </script>
 
-<form class="card create" onsubmit={submit}>
-  <h2>{editing ? `Edit ${share.name}` : 'New share'}</h2>
+<form class="create" class:card={!bare} onsubmit={submit}>
+  {#if !bare}<h2>{editing ? `Edit ${share.name}` : 'New share'}</h2>{/if}
 
   {#if !editing}
     <label>
@@ -75,24 +76,19 @@
   <fieldset>
     <legend>Who can access it</legend>
     {#if users.length}
-      <table class="members access">
-        <tbody>
-          {#each users as u (u.name)}
-            <tr>
-              <td><strong>{u.name}</strong></td>
-              <td class="right">
-                <div class="segmented" role="radiogroup" aria-label="Access for {u.name}">
-                  {#each [['', 'No access'], ['ro', 'Read only'], ['rw', 'Read & write']] as [val, label]}
-                    <label class:on={access[u.name] === val}>
-                      <input type="radio" bind:group={access[u.name]} value={val} />{label}
-                    </label>
-                  {/each}
-                </div>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+      <div class="access-list">
+        {#each users as u (u.name)}
+          <div class="access-row">
+            <span class="avatar">{u.name.slice(0, 2).toUpperCase()}</span>
+            <div class="who"><div>{u.name}</div><div class="muted small">User</div></div>
+            <select bind:value={access[u.name]} aria-label="Access for {u.name}">
+              <option value="">No access</option>
+              <option value="ro">Read only</option>
+              <option value="rw">Read / write</option>
+            </select>
+          </div>
+        {/each}
+      </div>
     {:else}
       <p class="muted small">No users yet. Create them on the Users page; until then only guest access is possible.</p>
     {/if}
@@ -160,7 +156,15 @@
 
   {#if error}<p class="error">{error}</p>{/if}
   <div class="actions">
-    <button type="button" class="secondary" onclick={onCancel}>Cancel</button>
+    {#if editing && onDelete}<button type="button" class="secondary danger-text" onclick={onDelete}>Delete</button><span class="spacer"></span>{/if}
+    <button type="button" class="secondary" onclick={onCancel}>{bare && editing ? 'Close' : 'Cancel'}</button>
     <button type="submit" disabled={busy || (!editing && (!name || !volume))}>{busy ? 'Saving…' : editing ? 'Save' : 'Create share'}</button>
   </div>
 </form>
+
+<style>
+  .access-list { display: flex; flex-direction: column; gap: 0.5rem; }
+  .access-row { display: flex; align-items: center; gap: 0.65rem; }
+  .access-row .who { flex: 1; min-width: 0; }
+  .access-row select { width: 9.5rem; }
+</style>

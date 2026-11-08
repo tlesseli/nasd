@@ -317,6 +317,9 @@ func (s *Service) DeleteUser(ctx context.Context, name string) error {
 	if st := s.Store.Read(); !isShareUser(&st, name) {
 		return fmt.Errorf("user %s not found", name)
 	}
+	// Quotas belong to the numeric user ID, which the next new user may
+	// reuse: clear them, or that user would inherit the limit.
+	s.applyQuota(ctx, name, 0)
 	s.Run(ctx, "smbpasswd", "-x", name) // errors ignored: clean up as much as possible
 	s.Run(ctx, "userdel", name)
 	err := s.Store.Update(func(st *store.State) error {

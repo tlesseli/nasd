@@ -165,9 +165,12 @@ func TestShareLifecycle(t *testing.T) {
 		}
 	}
 
-	// Deleting a user removes them from shares.
+	// Deleting a user removes them from shares and clears their quota.
 	if err := s.DeleteUser(ctx, "bob"); err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(f.cmds, "\n"), "setquota -u bob 0 0 0 0") {
+		t.Error("a deleted user's quota must be cleared (the UID gets reused)")
 	}
 	st := s.Store.Read()
 	if acc := st.FindShare("Photos").Access; len(acc) != 1 || acc["alice"] != "rw" {

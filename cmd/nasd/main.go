@@ -170,6 +170,13 @@ func main() {
 	go ms.Run(ctx)
 	go shr.RunSizes(ctx)
 	go func() {
+		// state.json is the source of truth for quotas: make the system agree
+		// (e.g. after a restore, or a quota left behind by an older version).
+		if err := shr.ApplyQuotas(ctx); err != nil {
+			log.Printf("warning: applying quotas: %v", err)
+		}
+	}()
+	go func() {
 		// Spin-down and Wake-on-LAN don't survive a reboot: apply them again.
 		if err := pw.Apply(ctx); err != nil {
 			log.Printf("warning: applying power settings: %v", err)
@@ -187,6 +194,7 @@ func main() {
 	if err := httpSrv.ListenAndServeTLS("", ""); !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
+	ms.Save() // synchronously: the process exits right after, the sampler goroutine may not get to it
 }
 
 // afterBootCheck: an ext4 check was requested for this boot (it ran while

@@ -5,6 +5,8 @@
   import JobPanel from './JobPanel.svelte'
 
   let { onSessionLost } = $props()
+  let security = $state(null)
+  let homes = $state(null)
 
   let users = $state([])
   let quotas = $state([]) // per mounted volume: {volume, filesystem, enabled, usage[]}
@@ -34,7 +36,7 @@
 
   async function refresh() {
     try {
-      ;[users, quotas] = await Promise.all([api.get('/api/users'), api.get('/api/quotas')])
+      ;[users, quotas, security, homes] = await Promise.all([api.get('/api/users'), api.get('/api/quotas'), api.get('/api/security'), api.get('/api/homes')])
       loaded = true
     } catch (e) {
       if (e.status === 401) onSessionLost()
@@ -124,19 +126,35 @@
   // Space used by a user on each volume with quotas.
   const usageOf = (name) =>
     withQuotas.map((q) => ({ volume: q.volume, ...(q.usage.find((u) => u.user === name) ?? { usedKB: 0, limitKB: 0 }) }))
+
+  // Status from the quota usage on any volume with quotas.
+  function status(u) {
+    const worst = usageOf(u.name).reduce((m, x) => Math.max(m, x.limitKB ? x.usedKB / x.limitKB : 0), 0)
+    if (worst >= 1) return ['bad', 'Over quota']
+    if (worst >= 0.9) return ['warn', 'Near quota']
+    return ['good', 'Active']
+  }
 </script>
 
 <main class="page">
   <div class="page-head">
-    <h1>Users</h1>
-    <span class="spacer"></span>
-    {#if !adding}<button onclick={() => (adding = true)}>New user</button>{/if}
+    <div>
+      <div class="eyebrow">Local accounts · file sharing only</div>
+      <h1>Users</h1>
+    </div>
+    <div class="actions">{#if !adding}<button onclick={() => (adding = true)}>New user</button>{/if}</div>
   </div>
-  <p class="muted">These accounts connect to shares from computers and phones. They can't sign in to this admin interface.</p>
 
   {#if error}<p class="error">{error}</p>{/if}
   {#if notice}<p class="notice">{notice}</p>{/if}
   {#if job}<JobPanel {job} onFinished={refresh} onClose={() => (job = null)} />{/if}
+
+  <div class="grid cols-4 kpis">
+    <div class="card kpi"><div class="label">Users</div><div class="value">{users.length}</div></div>
+    <div class="card kpi"><div class="label">With a quota</div><div class="value">{users.filter((u) => u.quotaMB).length} <small>/ {users.length}</small></div></div>
+    <div class="card kpi"><div class="label">Home folders</div><div class="value">{homes?.enabled ? 'On' : 'Off'}</div></div>
+    <div class="card kpi" class:warn={security?.failedSignIns24h}><div class="label">Failed sign-ins · 24 h</div><div class="value">{security?.failedSignIns24h ?? '–'}</div></div>
+  </div>
 
   {#if adding}
     <form class="card create" onsubmit={createUser}>
@@ -147,8 +165,10 @@
         <input bind:value={newName} autocomplete="off" spellcheck="false" maxlength="32" autofocus />
         <span class="hint">Lowercase letters, digits, - and _. This is what they type when connecting.</span>
       </label>
-      <label>Password <input type="password" bind:value={newPw} autocomplete="new-password" minlength="8" required /></label>
-      <label>Confirm password <input type="password" bind:value={newPw2} autocomplete="new-password" required /></label>
+      <div class="two-cols">
+        <label>Password <input type="password" bind:value={newPw} autocomplete="new-password" minlength="8" required /></label>
+        <label>Confirm password <input type="password" bind:value={newPw2} autocomplete="new-password" required /></label>
+      </div>
       {#if formError}<p class="error">{formError}</p>{/if}
       <div class="actions">
         <button type="button" class="secondary" onclick={() => (adding = false)}>Cancel</button>
@@ -157,67 +177,77 @@
     </form>
   {/if}
 
-  <div class="card">
-    {#if users.length}
-      <table class="members users-table">
-        <thead>
-          <tr><th>User</th><th>Shares</th><th>Quota</th>{#if withQuotas.length}<th>Used</th>{/if}<th></th></tr>
-        </thead>
-        <tbody>
-          {#each users as u (u.name)}
-            <tr>
-              <td><strong>{u.name}</strong></td>
-              <td class="small">{u.shares.length ? u.shares.join(', ') : '—'}</td>
-              <td>{quotaText(u.quotaMB)}</td>
-              {#if withQuotas.length}
-                <td class="small">
+  <div class="users-layout">
+    <section class="card table-card">
+      <div class="card-head"><h2>Users</h2></div>
+      {#if users.length}
+        <table class="data">
+          <thead><tr><th>User</th><th class="hide-sm">Shares</th><th>Quota</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {#each users as u (u.name)}
+              {@const [cls, st] = status(u)}
+              <tr>
+                <td><div class="who"><span class="avatar">{u.name.slice(0, 2).toUpperCase()}</span><span>{u.name}</span></div></td>
+                <td class="hide-sm"><div class="badges">{#each u.shares as sh}<span class="badge">{sh}</span>{:else}<span class="muted small">—</span>{/each}</div></td>
+                <td class="quota-cell">
                   {#each usageOf(u.name) as x}
                     {@const pct = x.limitKB ? Math.round((100 * x.usedKB) / x.limitKB) : 0}
                     <div class="usage-line">
-                      {withQuotas.length > 1 ? `${x.volume}: ` : ''}{formatBytes(x.usedKB * 1024)}{x.limitKB ? ` · ${pct}%` : ''}
+                      <span class="small">{formatBytes(x.usedKB * 1024)}{x.limitKB ? ` / ${formatBytes(x.limitKB * 1024)}` : ''}{withQuotas.length > 1 ? ` · ${x.volume}` : ''}</span>
                       {#if x.limitKB}<span class="meter"><span style="width: {Math.min(pct, 100)}%" class:full={pct >= 90}></span></span>{/if}
                     </div>
+                  {:else}
+                    <span class="small">{quotaText(u.quotaMB)}</span>
                   {/each}
                 </td>
-              {/if}
-              <td class="right row-actions">
-                <button class="link" onclick={() => openPassword(u.name)}>Password</button>
-                <button class="link" onclick={() => openQuota(u)}>Quota</button>
-                <button class="link danger-text" onclick={() => askDelete(u)}>Delete</button>
-              </td>
-            </tr>
+                <td><span class="badge {cls}">{st}</span></td>
+                <td class="right row-actions">
+                  <button class="link" onclick={() => openPassword(u.name)}>Password</button>
+                  <button class="link" onclick={() => openQuota(u)}>Quota</button>
+                  <button class="link danger-text" onclick={() => askDelete(u)}>Delete</button>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {:else if loaded}
+        <p class="muted empty-note">No users yet. Create one for each person who will use the NAS.</p>
+      {/if}
+      {#if quotas.length}
+        <div class="quota-volumes">
+          <span class="muted small">Quotas apply on:</span>
+          {#each quotas as q (q.volume)}
+            {#if q.enabled}
+              <span class="badge good">{q.volume}</span>
+            {:else if q.filesystem === 'ext4'}
+              <span class="small">{q.volume} (off)</span>
+              <button class="link small" onclick={() => enableQuotas(q.volume)} disabled={job?.status === 'running'}
+                title="The volume is unmounted for a few seconds: nobody should be using it">Enable</button>
+            {:else}
+              <span class="muted small">{q.volume} (not available on {q.filesystem})</span>
+            {/if}
           {/each}
-        </tbody>
-      </table>
-    {:else if loaded}
-      <p class="muted">No users yet. Create one for each person who will use the NAS.</p>
-    {/if}
+        </div>
+      {/if}
+    </section>
 
-    {#if quotas.length}
-      <div class="quota-volumes">
-        <span class="muted small">Quotas apply on:</span>
-        {#each quotas as q (q.volume)}
-          {#if q.enabled}
-            <span class="badge good">{q.volume}</span>
-          {:else if q.filesystem === 'ext4'}
-            <span class="small">{q.volume} (off)</span>
-            <button class="link small" onclick={() => enableQuotas(q.volume)} disabled={job?.status === 'running'}
-              title="The volume is unmounted for a few seconds: nobody should be using it">Enable</button>
-          {:else}
-            <span class="muted small" title="Per-user quotas need ext4">{q.volume} (not available on {q.filesystem})</span>
-          {/if}
-        {/each}
-      </div>
-    {/if}
-  </div>
-
-  <h2>Administrator</h2>
-  <div class="card list">
-    <div class="row">
-      <strong>admin</strong>
-      <span class="muted small">Signs in to this interface. Can't connect to shares.</span>
-      <span class="spacer"></span>
-      <button class="link" onclick={() => openPassword('__admin__')}>Password</button>
+    <div class="stack">
+      <section class="card">
+        <div class="card-head"><h2>Sign-in policy</h2></div>
+        {#if security}
+          <dl class="share-info">
+            <dt>Minimum password length</dt><dd class="right">{security.minPasswordLength}</dd>
+            <dt>Lockout</dt><dd class="right">{security.lockoutTries} tries · {security.lockoutMinutes} min</dd>
+            <dt>Admin session</dt><dd class="right">{security.sessionMinutes} min idle</dd>
+            <dt>SSH for users</dt><dd class="right good-text">Refused</dd>
+          </dl>
+        {/if}
+      </section>
+      <section class="card">
+        <div class="card-head"><h2>Administrator</h2></div>
+        <div class="who"><span class="avatar">AD</span><div><div>admin</div><div class="muted small">Signs in here · can't use shares</div></div>
+          <span class="spacer"></span><button class="link" onclick={() => openPassword('__admin__')}>Password</button></div>
+      </section>
     </div>
   </div>
 </main>
@@ -263,3 +293,12 @@
 {#if dialog}
   <ConfirmDialog {...dialog} onCancel={() => (dialog = null)} />
 {/if}
+
+<style>
+  .kpis { margin-bottom: 14px; }
+  .users-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; align-items: start; }
+  .who { display: flex; align-items: center; gap: 0.6rem; }
+  .quota-cell { min-width: 9rem; }
+  .empty-note { padding: 0 1.25rem 1.25rem; }
+  @media (max-width: 1100px) { .users-layout { grid-template-columns: 1fr; } }
+</style>
