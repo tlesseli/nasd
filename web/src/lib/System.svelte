@@ -5,6 +5,7 @@
   import NetworkSettings from './NetworkSettings.svelte'
   import NameTime from './NameTime.svelte'
   import Updates from './Updates.svelte'
+  import HardwareSettings from './HardwareSettings.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
 
   let { hostname, onSessionLost } = $props()
@@ -136,7 +137,7 @@
     <button class="secondary danger-text" onclick={() => askPower('poweroff')}>Shut down</button>
   </div>
   <nav class="tabs" aria-label="System sections">
-    {#each [['alerts', 'Alerts'], ['power', 'Power'], ['network', 'Network'], ['nametime', 'Name & time'], ['updates', 'Updates'], ['events', 'Events'], ['logs', 'Logs']] as [id, label]}
+    {#each [['alerts', 'Alerts'], ['power', 'Power'], ['network', 'Network'], ['nametime', 'Name & time'], ['updates', 'Updates'], ['hardware', 'Hardware'], ['events', 'Events'], ['logs', 'Logs']] as [id, label]}
       <button class:active={tab === id} onclick={() => (tab = id)}>{label}</button>
     {/each}
   </nav>
@@ -225,6 +226,7 @@
   {#if tab === 'network'}<NetworkSettings />{/if}
   {#if tab === 'nametime'}<NameTime {hostname} />{/if}
   {#if tab === 'updates'}<Updates />{/if}
+  {#if tab === 'hardware'}<HardwareSettings />{/if}
 
   {#if tab === 'events'}
     <div class="card list">

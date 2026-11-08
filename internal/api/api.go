@@ -30,6 +30,7 @@ import (
 	"readynas/internal/auth"
 	"readynas/internal/backups"
 	"readynas/internal/disks"
+	"readynas/internal/hardware"
 	"readynas/internal/jobs"
 	"readynas/internal/monitor"
 	"readynas/internal/power"
@@ -58,6 +59,9 @@ type Server struct {
 	Monitor  *monitor.Monitor
 	Power    *power.Service
 	System   *sysconf.Service
+	Button   *hardware.Button
+	Fan      *hardware.Fan
+	Locator  *hardware.Locator
 	Run      run.Func // for read-only commands (smartctl -x, journalctl)
 	Sys      string   // "/sys"
 	Sessions *auth.Sessions
@@ -82,6 +86,7 @@ func (s *Server) Handler() http.Handler {
 	s.healthRoutes(mux)
 	s.systemRoutes(mux)
 	s.users2Routes(mux)
+	s.hardwareRoutes(mux)
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "unknown endpoint")

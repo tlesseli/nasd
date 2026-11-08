@@ -12,6 +12,7 @@
   let sensors = $state([])
   let events = $state([])
   let smart = $state(null) // {title, text}
+  let locating = $state([])
   let error = $state('')
 
   async function refresh() {
@@ -20,6 +21,7 @@
         api.get('/api/system'), api.get('/api/disks'), api.get('/api/volumes'), api.get('/api/services'),
       ])
       ;[sensors, events] = await Promise.all([api.get('/api/sensors'), api.get('/api/events')])
+      locating = (await api.get('/api/hardware')).locating
       error = ''
     } catch (e) {
       if (e.status === 401) onSessionLost()
@@ -41,6 +43,16 @@
       smart.text = e.message
     }
   }
+  async function locate(d, on) {
+    try {
+      if (on) await api.post(`/api/disks/${d.name}/locate`, { seconds: 60 })
+      else await api.post(`/api/disks/${d.name}/locate/stop`)
+      locating = (await api.get('/api/hardware')).locating
+    } catch (e) {
+      error = e.message
+    }
+  }
+
   const sevClass = { critical: 'bad', warning: 'warn', info: 'neutral' }
 
   // One word for the state of a disk, used for the colored badge.
@@ -140,9 +152,17 @@
             <dt>Bad sectors</dt><dd>{d.health.reallocatedSectors + d.health.pendingSectors}</dd>
           {/if}
         </dl>
-        {#if d.health?.supported}
-          <button class="link small smart-link" onclick={() => showSmart(d)}>SMART details</button>
-        {/if}
+        <div class="disk-actions">
+          {#if d.health?.supported}
+            <button class="link small" onclick={() => showSmart(d)}>SMART details</button>
+          {/if}
+          {#if locating.includes(d.name)}
+            <button class="link small" onclick={() => locate(d, false)}>Stop blinking</button>
+            <span class="badge info blink">Blinking</span>
+          {:else}
+            <button class="link small" onclick={() => locate(d, true)} title="Makes the disk's activity light blink for 60 s">Locate</button>
+          {/if}
+        </div>
       </article>
     {:else}
       <p class="muted">No data disks detected.</p>

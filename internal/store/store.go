@@ -178,6 +178,22 @@ type UPS struct {
 	Driver  string `json:"driver"` // usbhid-ups (most USB UPS), nutdrv_qx, dummy-ups (simulation)
 }
 
+// ButtonSettings: what the front Backup button does.
+type ButtonSettings struct {
+	Device string `json:"device"` // input device name that sends the press (learned)
+	Code   int    `json:"code"`   // key code (learned)
+	Jobs   []int  `json:"jobs"`   // backup jobs to run, in order
+}
+
+// FanSettings: who drives the fan.
+type FanSettings struct {
+	Mode       string `json:"mode"`       // "" = the motherboard (default), "curve" = nasd, "full" = always 100%
+	PWM        string `json:"pwm"`        // controlled output, e.g. "hwmon2/pwm1"
+	MinPercent int    `json:"minPercent"` // speed at or below LowTemp
+	LowTemp    int    `json:"lowTemp"`    // °C (hottest disk)
+	HighTemp   int    `json:"highTemp"`   // °C: 100% at or above
+}
+
 // NetworkSettings: Managed=false leaves the network to the OS (DHCP).
 type NetworkSettings struct {
 	Managed    bool     `json:"managed"`
@@ -222,6 +238,8 @@ type State struct {
 	Power          PowerSettings          `json:"power"`
 	Network        NetworkSettings        `json:"network"`
 	NetworkPending *NetworkChange         `json:"networkPending,omitempty"`
+	Button         ButtonSettings         `json:"button"`
+	Fan            FanSettings            `json:"fan"`
 }
 
 func (s *State) FindBackup(id int) *BackupJob {
@@ -338,6 +356,7 @@ func clone(st State) State {
 	out.Alerts.Disabled = slices.Clone(st.Alerts.Disabled)
 	out.Events = slices.Clone(st.Events)
 	out.Maintenance = maps.Clone(st.Maintenance)
+	out.Button.Jobs = slices.Clone(st.Button.Jobs)
 	out.Network.Interfaces = slices.Clone(st.Network.Interfaces)
 	out.Network.DNS = slices.Clone(st.Network.DNS)
 	if st.NetworkPending != nil {

@@ -177,7 +177,6 @@ textarea { font: inherit; font-family: ui-monospace, monospace; font-size: 0.85r
 .dialog.wide .logs { max-height: 65vh; }
 .event { align-items: flex-start; }
 .event-body { flex-basis: 100%; margin: 0.2rem 0 0; }
-.smart-link { margin-top: 0.75rem; padding: 0; }
 .maintenance { border-top: 1px solid var(--border); padding-top: 0.75rem; display: flex; flex-direction: column; gap: 0.6rem; }
 .maintenance summary { cursor: pointer; font-weight: 500; }
 .maintenance[open] > :not(summary) { margin-top: 0.6rem; }
@@ -186,3 +185,10 @@ h2 a { font-weight: 400; margin-left: 0.5rem; }
 .pending { border-color: var(--warn); margin-bottom: 1rem; display: flex; flex-direction: column; gap: 0.6rem; }
 .pending h2, .pending p { margin: 0; }
 label.inline { flex-direction: row; align-items: center; gap: 0.4rem; font-weight: 400; }
+.disk-actions { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.75rem; }
+.disk-actions .link { padding: 0; }
+@keyframes blink { 50% { opacity: 0.3; } }
+.blink { animation: blink 1s steps(2) infinite; }
+@media (prefers-reduced-motion: reduce) { .blink { animation: none; } }
+.order { margin: 0; padding-left: 1.4rem; font-size: 0.9rem; }
+.order .link { padding: 0 0.3rem; }

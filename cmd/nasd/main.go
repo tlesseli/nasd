@@ -21,6 +21,7 @@ import (
 	"readynas/internal/auth"
 	"readynas/internal/backups"
 	"readynas/internal/disks"
+	"readynas/internal/hardware"
 	"readynas/internal/jobs"
 	"readynas/internal/monitor"
 	"readynas/internal/power"
@@ -36,7 +37,13 @@ import (
 func main() {
 	listen := flag.String("listen", ":8443", "HTTPS listen address")
 	dataDir := flag.String("data", "/var/lib/nasd", "directory for state and TLS certificate")
+	hwmon := flag.String("hwmon", "/sys", "root of the sensors tree (a fake one for tests)")
+	fansFull := flag.Bool("fans-full", false, "set every manually controlled fan to full speed and exit (run by systemd after nasd stops)")
 	flag.Parse()
+	if *fansFull {
+		hardware.AllFansFull(*hwmon)
+		return
+	}
 	log.SetFlags(0) // journald already adds timestamps
 
 	if os.Geteuid() != 0 {
@@ -94,6 +101,11 @@ func main() {
 	pw := power.NewService(st, dk, jm)
 	pw.Notify = al.Notify
 	mon.Power = pw
+	mon.Sys = *hwmon
+	fan := hardware.NewFan(st, dk)
+	fan.Root = *hwmon
+	btn := hardware.NewButton(st, bk, jm)
+	btn.Notify = al.Notify
 	sc := sysconf.NewService(st, jm)
 	sc.Notify = al.Notify
 	sc.ResumePending() // a network change not confirmed before a restart still rolls back
@@ -107,7 +119,10 @@ func main() {
 		Power:    pw,
 		System:   sc,
 		Run:      run.Exec,
-		Sys:      "/sys",
+		Sys:      *hwmon,
+		Button:   btn,
+		Fan:      fan,
+		Locator:  hardware.NewLocator(),
 		Volumes:  vols,
 		Shares:   shr,
 		Jobs:     jm,
@@ -130,6 +145,8 @@ func main() {
 	go mon.Run(ctx)
 	go pw.RunTimer(ctx)
 	go bk.RunUSBWatcher(ctx)
+	go btn.Run(ctx)
+	go fan.Run(ctx)
 	go func() {
 		// Spin-down and Wake-on-LAN don't survive a reboot: apply them again.
 		if err := pw.Apply(ctx); err != nil {
