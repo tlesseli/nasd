@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -34,9 +35,9 @@ type Monitor struct {
 	Sys     string         // "/sys"
 	Now     func() time.Time
 
-	mu         sync.Mutex        // Tick (monitor goroutine) vs MarkStarted (HTTP handlers)
-	active     map[string]string // condition key -> subject, for "resolved" messages
-	lastAction map[string]string // volume -> sync action at the previous tick
+	mu         sync.Mutex         // Tick (monitor goroutine) vs MarkStarted (HTTP handlers)
+	active     map[string]Problem // condition key -> current problem
+	lastAction map[string]string  // volume -> sync action at the previous tick
 	lastFired  map[string]time.Time
 	fanSeen    map[string]bool // fans seen spinning (a fan at 0 RPM from the start may just be unplugged)
 	upsFails   int             // consecutive rounds without an answer from the UPS
@@ -44,7 +45,7 @@ type Monitor struct {
 
 func New(st *store.Store, v *volumes.Service, d *disks.Service, a *alerts.Service) *Monitor {
 	return &Monitor{Store: st, Volumes: v, Disks: d, Alerts: a, Sys: "/sys", Now: time.Now,
-		active: map[string]string{}, lastAction: map[string]string{}, lastFired: map[string]time.Time{}, fanSeen: map[string]bool{}}
+		active: map[string]Problem{}, lastAction: map[string]string{}, lastFired: map[string]time.Time{}, fanSeen: map[string]bool{}}
 }
 
 func (m *Monitor) Run(ctx context.Context) {
@@ -59,6 +60,34 @@ func (m *Monitor) Run(ctx context.Context) {
 			m.Tick(ctx)
 		}
 	}
+}
+
+// Problem is a condition that is true right now (shown as "Needs attention").
+type Problem struct {
+	Key      string    `json:"key"` // e.g. "raid_degraded:media"
+	Kind     string    `json:"kind"`
+	Severity string    `json:"severity"`
+	Subject  string    `json:"subject"`
+	Body     string    `json:"body"`
+	Since    time.Time `json:"since"`
+}
+
+// Active lists current problems, most severe first.
+func (m *Monitor) Active() []Problem {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	rank := map[string]int{"critical": 0, "warning": 1, "info": 2}
+	out := make([]Problem, 0, len(m.active))
+	for _, p := range m.active {
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if rank[out[i].Severity] != rank[out[j].Severity] {
+			return rank[out[i].Severity] < rank[out[j].Severity]
+		}
+		return out[i].Since.Before(out[j].Since)
+	})
+	return out
 }
 
 // MarkStarted records that a check/repair was started by hand, so its end
@@ -78,7 +107,7 @@ func (m *Monitor) Tick(ctx context.Context) {
 	cond := func(key, kind, subject, body string) {
 		seen[key] = true
 		if _, ok := m.active[key]; !ok {
-			m.active[key] = subject
+			m.active[key] = Problem{Key: key, Kind: kind, Severity: alerts.Severity(kind), Subject: subject, Body: body, Since: m.Now()}
 			m.Alerts.Notify(kind, subject, body)
 		}
 	}
@@ -143,11 +172,11 @@ func (m *Monitor) Tick(ctx context.Context) {
 	}
 
 	// Conditions that are no longer true.
-	for key, subject := range m.active {
+	for key, p := range m.active {
 		if !seen[key] {
 			delete(m.active, key)
 			if !strings.HasPrefix(key, "disk_warning:") { // bad sectors don't "heal"
-				m.Alerts.Notify("resolved", "Resolved: "+subject, "This problem is no longer detected.")
+				m.Alerts.Notify("resolved", "Resolved: "+p.Subject, "This problem is no longer detected.")
 			}
 		}
 	}
@@ -191,6 +220,18 @@ func (m *Monitor) checkVolume(ctx context.Context, v volumes.Volume, st store.St
 		if _, alerted := m.active["raid_degraded:"+v.Name]; v.Degraded == 0 && !alerted {
 			m.Alerts.Notify("raid_rebuilt", "Volume "+v.Name+" is fully protected again", "The rebuild finished: the volume has its redundancy back.")
 		}
+	case "check", "repair":
+		m.Store.Update(func(st *store.State) error {
+			if st.Maintenance == nil {
+				st.Maintenance = map[string]store.Maintenance{}
+			}
+			mt := st.Maintenance[v.Name]
+			mt.LastCheck, mt.LastMismatch = m.Now(), v.MismatchCount
+			st.Maintenance[v.Name] = mt
+			return nil
+		})
+	}
+	switch prev {
 	case "check":
 		if v.MismatchCount == 0 {
 			m.Alerts.Notify("scrub_done", "Volume "+v.Name+" checked: no problem found", "Every block matched its mirror or parity.")

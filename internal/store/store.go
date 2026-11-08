@@ -58,9 +58,10 @@ type Share struct {
 // an older state.json reads as false, so the safe default (SMB on) must be
 // the zero value.
 type Settings struct {
-	SMBDisabled  bool `json:"smbDisabled"`
-	RsyncEnabled bool `json:"rsyncEnabled"`
-	FTPEnabled   bool `json:"ftpEnabled"`
+	SMBDisabled  bool   `json:"smbDisabled"`
+	RsyncEnabled bool   `json:"rsyncEnabled"`
+	Workgroup    string `json:"workgroup"` // SMB workgroup ("" = WORKGROUP)
+	FTPEnabled   bool   `json:"ftpEnabled"`
 	// FTPAllowPlain allows unencrypted FTP (passwords readable on the
 	// network). Off = FTPS (FTP over TLS) is required.
 	FTPAllowPlain bool `json:"ftpAllowPlain"`
@@ -171,6 +172,9 @@ type Maintenance struct {
 	// FsckAtBoot: an ext4 check was requested for the next boot; nasd
 	// restores the normal settings once the NAS has restarted.
 	FsckAtBoot bool `json:"fsckAtBoot"`
+	// Last finished check (or repair) and what it found.
+	LastCheck    time.Time `json:"lastCheck,omitzero"`
+	LastMismatch int64     `json:"lastMismatch"`
 }
 
 // PowerSettings: saving energy and surviving power cuts.

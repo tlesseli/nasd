@@ -15,6 +15,7 @@ package api
 //	POST /api/me/password                    {current, new}  admin password
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -107,7 +108,33 @@ func (s *Server) deleteShare(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) services(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.Shares.Status(r.Context()))
+	type svc struct {
+		shares.ServiceStatus
+		Detail string `json:"detail"`
+	}
+	var out []svc
+	for _, st := range s.Shares.Status(r.Context()) {
+		x := svc{ServiceStatus: st}
+		if st.Unit == "smbd" && st.Active {
+			x.Detail = fmt.Sprintf("%d sessions", s.Shares.SMBSessions(r.Context()))
+		}
+		out = append(out, x)
+	}
+	if s.Power != nil {
+		if u := s.Power.UPSStatus(r.Context()); u.Enabled {
+			x := svc{ServiceStatus: shares.ServiceStatus{Unit: "ups", Label: "UPS", Active: u.Error == ""}}
+			switch {
+			case u.Error != "":
+				x.Detail = "not reachable"
+			case u.OnBattery:
+				x.Detail = fmt.Sprintf("on battery · %d%%", u.Charge)
+			default:
+				x.Detail = fmt.Sprintf("battery %d%%", u.Charge)
+			}
+			out = append(out, x)
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) changeAdminPassword(w http.ResponseWriter, r *http.Request) {

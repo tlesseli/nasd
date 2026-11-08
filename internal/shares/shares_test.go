@@ -425,3 +425,18 @@ func TestRsyncReadWriteAndFTP(t *testing.T) {
 		t.Errorf("FTP off:\n%s", all)
 	}
 }
+
+func TestWorkgroup(t *testing.T) {
+	s, _, _ := newTestService(t)
+	ctx := context.Background()
+	if err := s.SetSettings(ctx, store.Settings{Workgroup: "home lan"}); err == nil {
+		t.Error("spaces must be refused")
+	}
+	if err := s.SetSettings(ctx, store.Settings{Workgroup: "familie"}); err != nil {
+		t.Fatal(err)
+	}
+	conf, _ := os.ReadFile(s.SmbConf)
+	if !strings.Contains(string(conf), "workgroup = FAMILIE") {
+		t.Errorf("smb.conf:\n%s", conf)
+	}
+}

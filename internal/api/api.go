@@ -32,6 +32,7 @@ import (
 	"readynas/internal/disks"
 	"readynas/internal/hardware"
 	"readynas/internal/jobs"
+	"readynas/internal/metrics"
 	"readynas/internal/monitor"
 	"readynas/internal/power"
 	"readynas/internal/run"
@@ -62,6 +63,9 @@ type Server struct {
 	Button   *hardware.Button
 	Fan      *hardware.Fan
 	Locator  *hardware.Locator
+	Metrics  *metrics.Sampler
+	Version  string
+	failed   failedLogins
 	Run      run.Func // for read-only commands (smartctl -x, journalctl)
 	Sys      string   // "/sys"
 	Sessions *auth.Sessions
@@ -87,6 +91,7 @@ func (s *Server) Handler() http.Handler {
 	s.systemRoutes(mux)
 	s.users2Routes(mux)
 	s.hardwareRoutes(mux)
+	s.overviewRoutes(mux)
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "unknown endpoint")
@@ -162,6 +167,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	// Same error whether the user exists or not: don't reveal valid names.
 	if u == nil || !u.Admin || !auth.CheckPassword(u.PasswordHash, req.Password) {
 		s.Throttle.Fail(ip)
+		s.failed.add()
 		log.Printf("failed login for %q from %s", req.Username, ip)
 		writeError(w, http.StatusUnauthorized, "wrong username or password")
 		return
@@ -221,7 +227,9 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) system(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, system.Read())
+	info := system.Read()
+	info.Version = s.Version
+	writeJSON(w, http.StatusOK, info)
 }
 
 func (s *Server) disks(w http.ResponseWriter, r *http.Request) {

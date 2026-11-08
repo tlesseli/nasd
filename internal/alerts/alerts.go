@@ -57,6 +57,9 @@ var Kinds = []Kind{
 	{"power_action", "Restart or shutdown requested", "info", false},
 }
 
+// Severity of an event kind ("critical", "warning" or "info").
+func Severity(id string) string { return kind(id).Severity }
+
 func kind(id string) Kind {
 	for _, k := range Kinds {
 		if k.ID == id {

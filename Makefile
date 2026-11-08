@@ -16,7 +16,7 @@ ui:
 # GOARCH=amd64: the Atom D410 is 64-bit; GOAMD64=v1 keeps it compatible
 # with that old CPU (no AVX instructions).
 build: ui
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v1 go build -trimpath -ldflags "-s -w" -o $(BIN) ./cmd/nasd
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v1 go build -trimpath -ldflags "-s -w -X main.version=$$(git describe --always --dirty)" -o $(BIN) ./cmd/nasd
 	@ls -lh $(BIN)
 
 test:

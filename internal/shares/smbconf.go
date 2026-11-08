@@ -17,7 +17,7 @@ func renderSmbConf(st store.State) string {
 # The original Debian file is kept in smb.conf.orig.
 
 [global]
-   workgroup = WORKGROUP
+   workgroup = ` + workgroup(st) + `
    server string = %h NAS
    server role = standalone server
    security = user
@@ -150,6 +150,13 @@ func writeShare(b *strings.Builder, sh store.Share) {
 	if sh.TimeMachine {
 		line("fruit:time machine", "yes")
 	}
+}
+
+func workgroup(st store.State) string {
+	if st.Settings.Workgroup != "" {
+		return st.Settings.Workgroup
+	}
+	return "WORKGROUP"
 }
 
 // Private address ranges: the NAS only talks to the local network.

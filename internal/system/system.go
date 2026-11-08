@@ -17,6 +17,8 @@ type Info struct {
 	Load          []float64 `json:"load"` // 1, 5, 15 min averages
 	MemTotalBytes int64     `json:"memTotalBytes"`
 	MemAvailBytes int64     `json:"memAvailableBytes"`
+	Cores         int       `json:"cores"`
+	Version       string    `json:"version"` // nasd build (git describe)
 }
 
 func Read() Info {
@@ -48,6 +50,9 @@ func Read() Info {
 		}
 	})
 	eachLine("/proc/cpuinfo", func(l string) {
+		if strings.HasPrefix(l, "processor") {
+			info.Cores++
+		}
 		if info.CPU == "" && strings.HasPrefix(l, "model name") {
 			if _, v, ok := strings.Cut(l, ":"); ok {
 				info.CPU = strings.TrimSpace(v)

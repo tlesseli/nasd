@@ -23,6 +23,7 @@ import (
 	"readynas/internal/disks"
 	"readynas/internal/hardware"
 	"readynas/internal/jobs"
+	"readynas/internal/metrics"
 	"readynas/internal/monitor"
 	"readynas/internal/power"
 	"readynas/internal/run"
@@ -33,6 +34,9 @@ import (
 	"readynas/internal/volumes"
 	"readynas/web"
 )
+
+// version is set at build time: -ldflags "-X main.version=$(git describe)".
+var version = "dev"
 
 func main() {
 	listen := flag.String("listen", ":8443", "HTTPS listen address")
@@ -112,6 +116,19 @@ func main() {
 	sc.ResumePending() // a network change not confirmed before a restart still rolls back
 	afterBootCheck(st, vols, al)
 
+	ms := metrics.New(filepath.Join(*dataDir, "metrics.json"))
+	ms.Sys = *hwmon
+	ms.Storage = func(ctx context.Context) map[string]int64 {
+		list, _ := vols.List(ctx)
+		used := map[string]int64{}
+		for _, v := range list {
+			if v.TotalBytes > 0 {
+				used[v.Name] = v.UsedBytes
+			}
+		}
+		return used
+	}
+
 	srv := &api.Server{
 		Store:    st,
 		Disks:    dk,
@@ -124,6 +141,8 @@ func main() {
 		Button:   btn,
 		Fan:      fan,
 		Locator:  hardware.NewLocator(),
+		Metrics:  ms,
+		Version:  version,
 		Volumes:  vols,
 		Shares:   shr,
 		Jobs:     jm,
@@ -148,6 +167,8 @@ func main() {
 	go bk.RunUSBWatcher(ctx)
 	go btn.Run(ctx)
 	go fan.Run(ctx)
+	go ms.Run(ctx)
+	go shr.RunSizes(ctx)
 	go func() {
 		// Spin-down and Wake-on-LAN don't survive a reboot: apply them again.
 		if err := pw.Apply(ctx); err != nil {

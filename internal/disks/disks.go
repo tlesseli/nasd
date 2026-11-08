@@ -10,7 +10,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -29,7 +32,11 @@ type Disk struct {
 	Role       string   `json:"role"`       // "system" (holds the OS) or "data"
 	Usage      string   `json:"usage"`      // what's on it: "", "raid member", "ext4"...
 	Partitions []string `json:"partitions"` // /dev/sda1...
-	Health     *Health  `json:"health"`
+	// Bay: position in the enclosure (1..n), from the SATA port the disk
+	// is connected to (ataN in sysfs), 0 if unknown. Ports are numbered in
+	// the order of the bays on the ReadyNAS board; to be confirmed on it.
+	Bay    int     `json:"bay"`
+	Health *Health `json:"health"`
 }
 
 type Health struct {
@@ -50,6 +57,8 @@ type Runner = run.Func
 
 type Service struct {
 	run Runner
+	// SysBlock is /sys/block (empty in tests: no bay numbers).
+	SysBlock string
 
 	// smartctl takes a moment per disk and wakes sleeping disks, so health
 	// is cached instead of queried on every page refresh.
@@ -60,7 +69,8 @@ type Service struct {
 }
 
 func NewService(run Runner) *Service {
-	return &Service{run: run, health: map[string]*Health{}, healthAt: map[string]time.Time{}, healthTTL: 5 * time.Minute}
+	return &Service{run: run, health: map[string]*Health{}, healthAt: map[string]time.Time{}, healthTTL: 5 * time.Minute,
+		SysBlock: "/sys/block"}
 }
 
 func (s *Service) List(ctx context.Context) ([]Disk, error) {
@@ -76,7 +86,43 @@ func (s *Service) List(ctx context.Context) ([]Disk, error) {
 	for i := range list {
 		list[i].Health = s.healthOf(ctx, list[i].Path)
 	}
+	s.assignBays(list)
 	return list, nil
+}
+
+var ataRe = regexp.MustCompile(`/ata([0-9]+)/`)
+
+// assignBays numbers internal SATA data disks by the port they're on.
+func (s *Service) assignBays(list []Disk) {
+	if s.SysBlock == "" {
+		return
+	}
+	type port struct{ idx, ata int }
+	var ports []port
+	for i, d := range list {
+		if d.Transport != "sata" || d.Role == "usb" {
+			continue
+		}
+		target, err := filepath.EvalSymlinks(filepath.Join(s.SysBlock, d.Name))
+		if m := ataRe.FindStringSubmatch(target); err == nil && m != nil {
+			n, _ := strconv.Atoi(m[1])
+			ports = append(ports, port{i, n})
+		}
+	}
+	sort.Slice(ports, func(a, b int) bool { return ports[a].ata < ports[b].ata })
+	for bay, p := range ports {
+		list[p.idx].Bay = bay + 1
+	}
+}
+
+// SelfTest starts SMART's short self-test (about 2 minutes, run by the disk
+// itself; the result appears in the SMART report).
+func (s *Service) SelfTest(ctx context.Context, name string) error {
+	if !regexp.MustCompile(`^(sd[a-z]+|nvme[0-9]+n[0-9]+)$`).MatchString(name) {
+		return fmt.Errorf("invalid disk name")
+	}
+	_, err := s.run(ctx, "smartctl", "-t", "short", "/dev/"+name)
+	return err
 }
 
 // ---- lsblk ----

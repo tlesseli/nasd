@@ -56,6 +56,9 @@ type Service struct {
 	QuotaMounts func(ctx context.Context) ([]string, error)
 
 	mu sync.Mutex // one change at a time: state + config files must agree
+
+	sizesMu sync.Mutex
+	sizes   map[string]ShareSize
 }
 
 func NewService(st *store.Store, mounted func(context.Context) (map[string]string, error)) *Service {
@@ -74,6 +77,7 @@ func NewService(st *store.Store, mounted func(context.Context) (map[string]strin
 			return u.HomeDir, nil
 		},
 		QuotaMounts: func(context.Context) ([]string, error) { return nil, nil },
+		sizes:       map[string]ShareSize{},
 	}
 }
 
@@ -330,6 +334,8 @@ func (s *Service) DeleteUser(ctx context.Context, name string) error {
 
 // ----------------------------------------------------------------- shares
 
+var workgroupRe = regexp.MustCompile(`^[A-Z0-9][A-Z0-9-]{0,14}$`)
+
 var shareRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$`)
 
 var reservedShares = []string{"global", "homes", "printers", "print$", "ipc$"}
@@ -354,7 +360,8 @@ type ShareRequest struct {
 
 type ShareInfo struct {
 	store.Share
-	Available bool `json:"available"` // its volume is mounted
+	Available bool       `json:"available"` // its volume is mounted
+	Size      *ShareSize `json:"size"`      // last background measurement (nil: not yet)
 }
 
 func (s *Service) Shares(ctx context.Context) ([]ShareInfo, error) {
@@ -369,7 +376,7 @@ func (s *Service) Shares(ctx context.Context) ([]ShareInfo, error) {
 			sh.Access = map[string]string{}
 		}
 		sh.RsyncPassword = "" // never sent to the browser
-		out = append(out, ShareInfo{Share: sh, Available: ok})
+		out = append(out, ShareInfo{Share: sh, Available: ok, Size: s.size(sh.Name)})
 	}
 	return out, nil
 }
@@ -678,6 +685,10 @@ func (s *Service) service(ctx context.Context, on bool, units ...string) error {
 
 // SetSettings switches protocols and discovery services on or off.
 func (s *Service) SetSettings(ctx context.Context, settings store.Settings) error {
+	settings.Workgroup = strings.ToUpper(strings.TrimSpace(settings.Workgroup))
+	if settings.Workgroup != "" && !workgroupRe.MatchString(settings.Workgroup) {
+		return errors.New("workgroup: 1-15 letters, digits or '-'")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// Only the protocol switches: other settings (home shares, USB copy)
@@ -686,6 +697,7 @@ func (s *Service) SetSettings(ctx context.Context, settings store.Settings) erro
 		st.Settings.SMBDisabled, st.Settings.RsyncEnabled = settings.SMBDisabled, settings.RsyncEnabled
 		st.Settings.WSDDisabled, st.Settings.BonjourDisabled = settings.WSDDisabled, settings.BonjourDisabled
 		st.Settings.FTPEnabled, st.Settings.FTPAllowPlain = settings.FTPEnabled, settings.FTPAllowPlain
+		st.Settings.Workgroup = settings.Workgroup
 		return nil
 	}); err != nil {
 		return err
