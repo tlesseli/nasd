@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"readynas/internal/run"
 )
@@ -57,6 +58,9 @@ type Volume struct {
 	TotalBytes int64    `json:"totalBytes"` // filesystem usage, if mounted
 	UsedBytes  int64    `json:"usedBytes"`
 	AvailBytes int64    `json:"availBytes"`
+	// The filesystem is clearly smaller than the volume (e.g. a reshape
+	// finished while nasd wasn't watching): offer to grow it.
+	CanGrowFS bool `json:"canGrowFS"`
 }
 
 // Level describes a RAID level: minimum disks, usable capacity (in number
@@ -83,12 +87,13 @@ var Filesystems = []string{"ext4", "btrfs"}
 var nameRe = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,15}$`)
 
 type Service struct {
-	Sys        string // "/sys", a temp dir in tests
-	Fstab      string // "/etc/fstab"
-	MdadmConf  string // "/etc/mdadm/mdadm.conf"
-	MountRoot  string // "/data"
-	Run        run.Func
-	SkipStatfs bool // tests
+	Sys          string // "/sys", a temp dir in tests
+	Fstab        string // "/etc/fstab"
+	MdadmConf    string // "/etc/mdadm/mdadm.conf"
+	MountRoot    string // "/data"
+	Run          run.Func
+	SkipStatfs   bool          // tests
+	PollInterval time.Duration // tests; default 5 s
 }
 
 func NewService(r run.Func) *Service {
@@ -256,6 +261,8 @@ func (s *Service) fillNameAndFS(ctx context.Context, v *Volume) {
 			v.TotalBytes = int64(st.Blocks) * bs
 			v.AvailBytes = int64(st.Bavail) * bs
 			v.UsedBytes = int64(st.Blocks-st.Bfree) * bs
+			// Filesystems keep some space for metadata, so allow a 10% gap.
+			v.CanGrowFS = v.Sync == nil && v.TotalBytes > 0 && float64(v.TotalBytes) < 0.9*float64(v.SizeBytes)
 		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestOneJobAtATime(t *testing.T) {
@@ -12,7 +13,7 @@ func TestOneJobAtATime(t *testing.T) {
 	m := NewManager(func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		return []byte("line1\nline2"), nil
 	})
-	first, err := m.Start("first", func(ctx context.Context, j *Job) error {
+	first, err := m.Start("first", time.Minute, func(ctx context.Context, j *Job) error {
 		<-release
 		_, err := j.Run(ctx, "echo", "hi")
 		return err
@@ -20,7 +21,7 @@ func TestOneJobAtATime(t *testing.T) {
 	if err != nil || first.Status != Running {
 		t.Fatalf("start: %v %+v", err, first)
 	}
-	if _, err := m.Start("second", func(context.Context, *Job) error { return nil }); !errors.Is(err, ErrBusy) {
+	if _, err := m.Start("second", time.Minute, func(context.Context, *Job) error { return nil }); !errors.Is(err, ErrBusy) {
 		t.Fatalf("second job must be refused while the first runs, got %v", err)
 	}
 	close(release)
@@ -31,7 +32,7 @@ func TestOneJobAtATime(t *testing.T) {
 		t.Fatalf("job: %+v", got)
 	}
 
-	failed, err := m.Start("failing", func(context.Context, *Job) error { return errors.New("boom") })
+	failed, err := m.Start("failing", time.Minute, func(context.Context, *Job) error { return errors.New("boom") })
 	if err != nil {
 		t.Fatalf("a new job must be accepted once the first is done: %v", err)
 	}

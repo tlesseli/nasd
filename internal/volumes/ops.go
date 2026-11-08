@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"readynas/internal/disks"
@@ -142,10 +143,27 @@ func (s *Service) Create(ctx context.Context, r run.Func, req CreateRequest, sel
 	if _, err := r(ctx, "systemctl", "daemon-reload"); err != nil {
 		return err
 	}
-	if _, err := r(ctx, "mount", mnt); err != nil {
+	// Ask systemd to mount it (rather than calling mount ourselves) so the
+	// mount belongs to the system, exactly like it will at the next boot.
+	unit, err := mountUnit(ctx, r, mnt)
+	if err != nil {
+		return err
+	}
+	if _, err := r(ctx, "systemctl", "start", unit); err != nil {
 		return err
 	}
 	return s.saveMdadmConf(ctx, r)
+}
+
+// mountUnit: systemd names mount units after their path, with an escaping
+// scheme: /data/my-files -> data-my\x2dfiles.mount. Let systemd compute it.
+func mountUnit(ctx context.Context, r run.Func, mnt string) (string, error) {
+	out, err := r(ctx, "systemd-escape", "--path", "--suffix=mount", mnt)
+	unit := strings.TrimSpace(string(out))
+	if err == nil && unit == "" {
+		err = fmt.Errorf("systemd-escape returned nothing for %s", mnt)
+	}
+	return unit, err
 }
 
 // partition wipes a disk and creates a single GPT partition flagged "raid".
@@ -189,7 +207,12 @@ func partitionPath(disk string, n int) string {
 // Delete destroys a volume and all its data.
 func (s *Service) Delete(ctx context.Context, r run.Func, v Volume) error {
 	if v.Mountpoint != "" {
-		if _, err := r(ctx, "umount", v.Mountpoint); err != nil {
+		// systemd tracks every mount as a unit, even ones it didn't create.
+		unit, err := mountUnit(ctx, r, v.Mountpoint)
+		if err != nil {
+			return err
+		}
+		if _, err := r(ctx, "systemctl", "stop", unit); err != nil {
 			return fmt.Errorf("cannot unmount %s, is something using it? %w", v.Mountpoint, err)
 		}
 	}
@@ -284,6 +307,117 @@ func (s *Service) RemoveDisk(ctx context.Context, r run.Func, v Volume, m Member
 	r(ctx, "wipefs", "-a", m.Device)
 	r(ctx, "wipefs", "-a", "/dev/"+m.Disk)
 	return s.saveMdadmConf(ctx, r)
+}
+
+// ValidateExpand checks that a volume can grow by one disk. disk is either a
+// free disk or the volume's current hot spare. Returns nil for a spare.
+func ValidateExpand(v Volume, disk string, all []disks.Disk, vols []Volume) (*disks.Disk, error) {
+	switch {
+	case v.Level != "raid5" && v.Level != "raid6":
+		return nil, errors.New("only RAID 5 and RAID 6 volumes can be expanded")
+	case v.Status != "healthy":
+		return nil, fmt.Errorf("volume is %s: wait until it is healthy", v.Status)
+	}
+	for _, m := range v.Members {
+		if m.Disk == disk && strings.Contains(m.State, "spare") && m.Slot < 0 {
+			return nil, nil // reuse the hot spare
+		}
+	}
+	d, err := freeDisk(disk, all, MemberDisks(vols))
+	if err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
+// Expand grows a RAID 5/6 by one disk. Three steps:
+//  1. add the disk (unless it's already the spare),
+//  2. reshape: the kernel moves every stripe to spread data over N+1 disks.
+//     This rewrites the whole volume and takes hours on big disks; the
+//     volume stays online and redundant meanwhile,
+//  3. grow the filesystem into the new space.
+func (s *Service) Expand(ctx context.Context, r run.Func, logf func(string, ...any), v Volume, d *disks.Disk) error {
+	if d != nil {
+		size, err := s.memberSize(v)
+		if err != nil {
+			return err
+		}
+		if d.SizeBytes < size {
+			return fmt.Errorf("%s is too small for this volume", d.Name)
+		}
+		p, err := s.partition(ctx, r, *d, size)
+		if err != nil {
+			return err
+		}
+		if _, err := r(ctx, "mdadm", v.Device, "--add", p); err != nil {
+			return err
+		}
+	}
+	if _, err := r(ctx, "mdadm", "--grow", v.Device, "--raid-devices="+strconv.Itoa(v.RaidDisks+1)); err != nil {
+		return err
+	}
+	if err := s.waitSync(ctx, logf, filepath.Base(v.Device)); err != nil {
+		return err
+	}
+	if err := s.saveMdadmConf(ctx, r); err != nil {
+		return err
+	}
+	// Re-read the volume: its size changed.
+	grown, ok := s.readSysfs(filepath.Base(v.Device))
+	if !ok {
+		return errors.New("volume disappeared during the reshape")
+	}
+	grown.Mountpoint, grown.Filesystem = v.Mountpoint, v.Filesystem
+	return s.GrowFS(ctx, r, grown)
+}
+
+// waitSync polls sysfs until the array is idle, logging every 5%.
+func (s *Service) waitSync(ctx context.Context, logf func(string, ...any), dev string) error {
+	lastLogged := -5.0
+	for {
+		v, ok := s.readSysfs(dev)
+		if !ok {
+			return errors.New("array disappeared")
+		}
+		if v.Sync == nil {
+			logf("reshape finished")
+			return nil
+		}
+		if v.Sync.Percent >= lastLogged+5 {
+			lastLogged = v.Sync.Percent
+			logf("%s: %.0f%%, about %s left", v.Sync.Action, v.Sync.Percent, (time.Duration(v.Sync.ETASeconds) * time.Second).String())
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("stopped waiting (the reshape continues in the kernel; use \"Grow filesystem\" once it's done): %w", ctx.Err())
+		case <-time.After(s.pollInterval()):
+		}
+	}
+}
+
+func (s *Service) pollInterval() time.Duration {
+	if s.PollInterval > 0 {
+		return s.PollInterval
+	}
+	return 5 * time.Second
+}
+
+// GrowFS extends the filesystem to fill its volume. Both ext4 and btrfs can
+// grow while mounted and in use.
+func (s *Service) GrowFS(ctx context.Context, r run.Func, v Volume) error {
+	if v.Mountpoint == "" {
+		return errors.New("the volume must be mounted")
+	}
+	var err error
+	switch v.Filesystem {
+	case "ext4":
+		_, err = r(ctx, "resize2fs", v.Device)
+	case "btrfs":
+		_, err = r(ctx, "btrfs", "filesystem", "resize", "max", v.Mountpoint)
+	default:
+		err = fmt.Errorf("don't know how to grow %q", v.Filesystem)
+	}
+	return err
 }
 
 // ValidateErase: only data disks that no active volume uses.

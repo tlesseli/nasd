@@ -93,7 +93,9 @@ func NewManager(exec run.Func) *Manager {
 }
 
 // Start launches fn in the background, or returns ErrBusy.
-func (m *Manager) Start(title string, fn func(ctx context.Context, j *Job) error) (Snapshot, error) {
+// The timeout is a safety net against a hung command: 1 h is plenty for most
+// operations, but expanding a RAID can legitimately take a day.
+func (m *Manager) Start(title string, timeout time.Duration, fn func(ctx context.Context, j *Job) error) (Snapshot, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.running {
@@ -110,9 +112,8 @@ func (m *Manager) Start(title string, fn func(ctx context.Context, j *Job) error
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
-		// Not the HTTP request's context: the job must survive the browser
-		// closing. The timeout is a safety net against a hung command.
-		ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+		// Not the HTTP request's context: the job must survive the browser closing.
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		err := fn(ctx, j)
 

@@ -110,13 +110,38 @@
     }
   }
 
-  async function addDisk(v) {
+  // Run an action started from a button (not a dialog): show its error on the page.
+  async function run(action) {
     error = ''
-    const disk = addChoice[v.name] ?? freeDisks[0]?.name
     try {
-      await startJob(`/api/volumes/${v.name}/add`, { disk })
+      await action()
     } catch (e) {
       error = e.message
+    }
+  }
+
+  // Spares that are idle (not currently rebuilding into a slot).
+  const spares = (v) => v.members.filter((m) => m.state.includes('spare') && m.slot < 0)
+  // Disks that can be added to / used to expand a volume: free disks, plus its idle spares.
+  const candidates = (v) => [
+    ...spares(v).map((m) => ({ name: m.disk, label: `${m.disk} · current hot spare` })),
+    ...freeDisks.map((d) => ({ name: d.name, label: `${d.name} · ${formatBytes(d.sizeBytes)} · free` })),
+  ]
+  const parity = { raid5: 1, raid6: 2 }
+  const canExpand = (v) => v.level in parity && v.status === 'healthy'
+
+  function askExpand(v, disk) {
+    const p = parity[v.level]
+    const n = v.raidDisks
+    const newSize = (v.sizeBytes / (n - p)) * (n + 1 - p)
+    dialog = {
+      title: `Expand ${v.name} with ${disk}?`,
+      message: `${v.name} goes from ${n} to ${n + 1} disks and from ${formatBytes(v.sizeBytes)} to about ${formatBytes(newSize)}. ` +
+        `The data is reshaped across all disks: this takes a long time (hours with large disks). ` +
+        `The volume stays usable and protected meanwhile, but avoid restarting the NAS. Other disk operations wait until it's done.`,
+      confirmLabel: 'Expand volume',
+      danger: false,
+      onConfirm: () => startJob(`/api/volumes/${v.name}/expand`, { disk }),
     }
   }
 </script>
@@ -203,19 +228,39 @@
         </tbody>
       </table>
 
-      {#if v.level !== 'raid0' && freeDisks.length}
+      {#if v.canGrowFS}
+        <div class="warn-box row-box">
+          <span>The filesystem uses only {formatBytes(v.totalBytes)} of the {formatBytes(v.sizeBytes)} volume (for example after an expansion that finished while the NAS was restarting).</span>
+          <button class="secondary" onclick={() => run(() => startJob(`/api/volumes/${v.name}/grow-fs`, {}))} disabled={busy}>Grow filesystem</button>
+        </div>
+      {/if}
+
+      {#if v.level !== 'raid0' && candidates(v).length}
+        {@const choice = addChoice[v.name] ?? candidates(v)[0].name}
+        {@const isSpare = spares(v).some((m) => m.disk === choice)}
         <div class="add">
           <select bind:value={addChoice[v.name]}>
-            {#each freeDisks as d (d.name)}
-              <option value={d.name}>{d.name} · {formatBytes(d.sizeBytes)}</option>
+            {#each candidates(v) as c (c.name)}
+              <option value={c.name}>{c.label}</option>
             {/each}
           </select>
-          <button class="secondary" onclick={() => addDisk(v)} disabled={busy}>
-            {v.degraded > 0 ? 'Add & rebuild' : 'Add as hot spare'}
-          </button>
-          <span class="muted small">
-            {v.degraded > 0 ? 'Replaces the missing disk.' : 'A spare takes over automatically when a disk fails.'}
-          </span>
+          {#if v.degraded > 0}
+            {#if !isSpare}
+              <button class="secondary" onclick={() => run(() => startJob(`/api/volumes/${v.name}/add`, { disk: choice }))} disabled={busy}>Add &amp; rebuild</button>
+              <span class="muted small">Replaces the missing disk.</span>
+            {/if}
+          {:else}
+            {#if canExpand(v)}
+              <button onclick={() => askExpand(v, choice)} disabled={busy}>Expand volume</button>
+            {/if}
+            {#if !isSpare}
+              <button class="secondary" onclick={() => run(() => startJob(`/api/volumes/${v.name}/add`, { disk: choice }))} disabled={busy}>Add as hot spare</button>
+            {/if}
+            <span class="muted small">
+              {canExpand(v) ? 'Expand adds the disk\'s space to the volume. A hot spare stays idle and replaces a failing disk automatically.'
+                : 'A hot spare stays idle and replaces a failing disk automatically.'}
+            </span>
+          {/if}
         </div>
       {/if}
     </article>

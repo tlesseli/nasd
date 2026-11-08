@@ -7,9 +7,10 @@ Wants=network-online.target
 ExecStart=/usr/local/bin/nasd -listen :8443 -data /var/lib/nasd
 Restart=on-failure
 RestartSec=2
-# Runs as root (needs mdadm, smartctl, samba). Limit what else it can touch:
-ProtectHome=yes
-PrivateTmp=yes
+# Runs as root (needs mdadm, smartctl, samba).
+# No PrivateTmp/ProtectHome/ProtectSystem here: those give nasd its own mount
+# namespace, so volumes it mounts would be invisible to the rest of the
+# system (Samba included). Lesson learned in milestone 3.
 NoNewPrivileges=yes
 StateDirectory=nasd
 StateDirectoryMode=0700

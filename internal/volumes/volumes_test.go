@@ -65,6 +65,7 @@ func newTestService(t *testing.T) (*Service, *recorder) {
 		"lsblk":                   `{"blockdevices":[{"fstype":"ext4","uuid":"abcd-1234","mountpoints":["/data/media"]}]}`,
 		"blkid":                   "1111-2222\n",
 		"mdadm --detail --scan":   "ARRAY /dev/md/media metadata=1.2 UUID=x:y:z:w\n",
+		"systemd-escape":          "data-media.mount\n",
 	}}
 	dir := t.TempDir()
 	s := &Service{
@@ -172,7 +173,8 @@ func TestCreateCommands(t *testing.T) {
 		"parted -s /dev/sdc -- mklabel gpt mkpart nas 1MiB 1984MiB set 1 raid on",
 		"mdadm --create /dev/md/media --run --metadata=1.2 --name=media --level=raid5 --raid-devices=3 /dev/sda1 /dev/sdb1 /dev/sdc1",
 		"mkfs.ext4 -F -q -m 0 -L media /dev/md/media",
-		"mount " + filepath.Join(s.MountRoot, "media"),
+		"systemd-escape --path --suffix=mount " + filepath.Join(s.MountRoot, "media"),
+		"systemctl start data-media.mount",
 		"update-initramfs -u",
 	} {
 		if !strings.Contains(all, want) {
@@ -223,5 +225,60 @@ func TestPartitionPath(t *testing.T) {
 	}
 	if p := partitionPath("/dev/nvme0n1", 1); p != "/dev/nvme0n1p1" {
 		t.Error(p)
+	}
+}
+
+func TestValidateExpand(t *testing.T) {
+	healthy := Volume{Name: "media", Level: "raid5", Status: "healthy", RaidDisks: 3, Members: []Member{
+		{Disk: "sda", State: "in_sync", Slot: 0}, {Disk: "sdb", State: "in_sync", Slot: 1},
+		{Disk: "sdc", State: "in_sync", Slot: 2}, {Disk: "sdd", State: "spare", Slot: -1},
+	}}
+	all := append([]disks.Disk{{Name: "sde", Path: "/dev/sde", Role: "data", SizeBytes: 2 << 30}}, testDisks...)
+	vols := []Volume{healthy}
+
+	if d, err := ValidateExpand(healthy, "sdd", all, vols); err != nil || d != nil {
+		t.Errorf("the hot spare should be usable for expansion: %v %v", d, err)
+	}
+	if d, err := ValidateExpand(healthy, "sde", all, vols); err != nil || d == nil || d.Name != "sde" {
+		t.Errorf("a free disk should be usable: %v %v", d, err)
+	}
+	if _, err := ValidateExpand(healthy, "sda", all, vols); err == nil {
+		t.Error("an active member can't be used to expand")
+	}
+	for _, bad := range []Volume{
+		{Level: "raid1", Status: "healthy"},
+		{Level: "raid5", Status: "degraded"},
+		{Level: "raid5", Status: "syncing"},
+	} {
+		if _, err := ValidateExpand(bad, "sde", all, vols); err == nil {
+			t.Errorf("expanding %+v must be refused", bad)
+		}
+	}
+}
+
+func TestExpandWithSpare(t *testing.T) {
+	s, rec := newTestService(t)
+	// The fake array is rebuilding; make it idle so the reshape wait ends.
+	md := filepath.Join(s.Sys, "block", "md127", "md")
+	os.WriteFile(filepath.Join(md, "sync_action"), []byte("idle\n"), 0o644)
+	os.WriteFile(filepath.Join(md, "degraded"), []byte("0\n"), 0o644)
+
+	v := Volume{Name: "media", Device: "/dev/md127", Level: "raid5", RaidDisks: 3, Filesystem: "btrfs", Mountpoint: "/data/media"}
+	var logs []string
+	logf := func(f string, a ...any) { logs = append(logs, f) }
+	if err := s.Expand(context.Background(), rec.run, logf, v, nil); err != nil {
+		t.Fatal(err)
+	}
+	all := strings.Join(rec.cmds, "\n")
+	for _, want := range []string{
+		"mdadm --grow /dev/md127 --raid-devices=4",
+		"btrfs filesystem resize max /data/media",
+	} {
+		if !strings.Contains(all, want) {
+			t.Errorf("missing %q in:\n%s", want, all)
+		}
+	}
+	if strings.Contains(all, "--add") || strings.Contains(all, "parted") {
+		t.Errorf("expanding with the existing spare must not partition or add a disk:\n%s", all)
 	}
 }
