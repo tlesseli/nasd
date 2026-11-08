@@ -19,6 +19,34 @@
   let module = $state(job?.target.module ?? '')
   let path = $state(job?.target.path ?? '')
   let mirror = $state(job?.mirror ?? false)
+  // cloud archive (S3)
+  const t0 = job?.target ?? {}
+  let provider = $state(t0.provider ?? 'scaleway')
+  let region = $state(t0.region ?? 'fr-par')
+  let endpoint = $state(t0.endpoint ?? '')
+  let bucket = $state(t0.bucket ?? '')
+  let accessKey = $state(t0.accessKey ?? '')
+  let secretKey = $state('')
+  let storageClass = $state(t0.storageClass ?? '')
+  let encryptPassword = $state('')
+  let encryptPassword2 = $state('')
+  let bandwidthMB = $state(t0.bandwidthKB ? t0.bandwidthKB / 1024 : '')
+  const regions = {
+    aws: ['eu-west-3', 'eu-central-1', 'eu-west-1', 'eu-north-1', 'us-east-1', 'us-west-2'],
+    scaleway: ['fr-par', 'nl-ams', 'pl-waw'],
+  }
+  const classes = {
+    aws: [['DEEP_ARCHIVE', 'Glacier Deep Archive · cheapest (~1 $/TB/month), retrieval 12-48 h'],
+      ['GLACIER', 'Glacier Flexible Retrieval · retrieval 3-12 h (bulk)'], ['GLACIER_IR', 'Glacier Instant Retrieval · readable at once'],
+      ['STANDARD_IA', 'Standard-IA · readable at once'], ['STANDARD', 'Standard']],
+    scaleway: [['GLACIER', 'Glacier · cheapest, data in Europe, retrieval up to 12 h'], ['ONEZONE_IA', 'One Zone-IA · readable at once'], ['STANDARD', 'Standard']],
+  }
+  $effect(() => {
+    // Sensible defaults when switching provider.
+    if (provider !== 'other' && !regions[provider].includes(region)) region = regions[provider][0]
+    if (provider !== 'other' && !classes[provider].some(([c]) => c === storageClass)) storageClass = classes[provider][0][0]
+  })
+  const archiveClass = $derived(storageClass === 'DEEP_ARCHIVE' || storageClass === 'GLACIER')
   let excludes = $state((job?.excludes ?? []).join('\n'))
   let scheduleKind = $state(job?.schedule.kind ?? 'daily')
   let weekday = $state(job?.schedule.weekday ?? 0)
@@ -32,6 +60,10 @@
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
   function target() {
+    if (kind === 's3') {
+      return { kind, provider, region, endpoint, bucket, path, accessKey, secretKey, storageClass,
+        encryptPassword, bandwidthKB: Math.round((Number(bandwidthMB) || 0) * 1024) }
+    }
     return { kind, usbUUID, host, port: Number(port) || 0, user, password, module, path }
   }
 
@@ -56,6 +88,7 @@
 
   async function submit(event) {
     event.preventDefault()
+    if (kind === 's3' && encryptPassword !== encryptPassword2) return (error = 'The encryption passwords do not match.')
     busy = true
     error = ''
     try {
@@ -94,7 +127,7 @@
   <fieldset>
     <legend>{direction === 'push' ? 'Destination' : 'Source'}</legend>
     <div class="segmented wide" role="radiogroup" aria-label="Kind of target">
-      {#each [['usb', 'USB disk'], ['ssh', 'Computer (SSH)'], ['rsync', 'rsync server / old NAS']] as [val, label]}
+      {#each [['usb', 'USB disk'], ['ssh', 'Computer (SSH)'], ['rsync', 'rsync server / old NAS'], ['s3', 'Cloud archive (S3)']] as [val, label]}
         <label class:on={kind === val}><input type="radio" bind:group={kind} value={val} />{label}</label>
       {/each}
     </div>
@@ -115,6 +148,47 @@
       {/if}
       <label>Folder on the disk <input bind:value={path} placeholder="nas-backup/{share}" /></label>
       <p class="hint">The disk is mounted only while the job runs: you can unplug it any other time.</p>
+    {:else if kind === 's3'}
+      <div class="two-cols">
+        <label>Provider
+          <select bind:value={provider}>
+            <option value="scaleway">Scaleway Object Storage</option>
+            <option value="aws">Amazon S3 (AWS)</option>
+            <option value="other">Other S3-compatible</option>
+          </select></label>
+        {#if provider === 'other'}
+          <label>Endpoint <input bind:value={endpoint} placeholder="https://s3.example.com" spellcheck="false" /></label>
+          <label>Region <input bind:value={region} placeholder="us-east-1" spellcheck="false" /></label>
+        {:else}
+          <label>Region <select bind:value={region}>{#each regions[provider] as r}<option>{r}</option>{/each}</select></label>
+        {/if}
+      </div>
+      <div class="two-cols">
+        <label>Bucket <input bind:value={bucket} placeholder="my-nas-archive" spellcheck="false" /></label>
+        <label>Folder in the bucket <span class="hint">(optional)</span> <input bind:value={path} placeholder={share} spellcheck="false" /></label>
+      </div>
+      <div class="two-cols">
+        <label>Access key <input bind:value={accessKey} autocomplete="off" spellcheck="false" /></label>
+        <label>Secret key {editing ? '(empty = keep)' : ''} <input type="password" bind:value={secretKey} autocomplete="new-password" /></label>
+      </div>
+      <label>Storage class
+        {#if provider === 'other'}
+          <input bind:value={storageClass} placeholder="(provider default)" spellcheck="false" />
+        {:else}
+          <select bind:value={storageClass}>{#each classes[provider] as [c, label]}<option value={c}>{label}</option>{/each}</select>
+        {/if}
+      </label>
+      {#if archiveClass}
+        <p class="hint">Archive class: storing is very cheap, but reading files back needs a retrieval request first (hours), and deleting files within the minimum duration (90-180 days) is billed anyway.</p>
+      {/if}
+      <div class="two-cols">
+        <label>Encryption password {editing && job?.target.encrypted ? '(set; empty = keep)' : '(recommended)'}
+          <input type="password" bind:value={encryptPassword} autocomplete="new-password" /></label>
+        <label>Confirm <input type="password" bind:value={encryptPassword2} autocomplete="new-password" /></label>
+      </div>
+      <p class="hint"><strong>Files and names are encrypted on the NAS before leaving it:</strong> the provider can't read them. Without this password, nobody can, you included: keep it in a password manager.</p>
+      <label>Upload limit <span class="hint">(MB/s, empty = no limit; keeps your internet usable)</span>
+        <input type="number" min="0" step="0.5" bind:value={bandwidthMB} style="width: 9rem" /></label>
     {:else}
       <div class="two-cols">
         <label>Host <input bind:value={host} placeholder="192.168.1.20" autocomplete="off" spellcheck="false" /></label>

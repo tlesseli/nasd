@@ -33,6 +33,8 @@ func (s *Server) backupRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /api/backups/key", s.requireLogin(s.backupKey))
 	mux.Handle("POST /api/backups/{id}/delete", s.requireLogin(s.deleteBackup))
 	mux.Handle("POST /api/backups/{id}/run", s.requireLogin(s.runBackup))
+	mux.Handle("POST /api/backups/{id}/thaw", s.requireLogin(s.thawBackup))
+	mux.Handle("GET /api/backups/classes", s.requireLogin(s.storageClasses))
 	mux.Handle("GET /api/usb", s.requireLogin(s.listUSB))
 	mux.Handle("POST /api/usb/{disk}/format", s.requireLogin(s.formatUSB))
 	mux.Handle("GET /api/settings", s.requireLogin(s.getSettings))
@@ -87,6 +89,27 @@ func (s *Server) runBackup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, snap)
 }
 
+func (s *Server) thawBackup(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Days int `json:"days"`
+	}
+	readJSON(w, r, &req)
+	snap, err := s.Backups.Thaw(id, min(max(req.Days, 1), 30))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, snap)
+}
+
+func (s *Server) storageClasses(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, backups.StorageClasses)
+}
+
 func (s *Server) testBackup(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ID int `json:"id"`
@@ -95,16 +118,19 @@ func (s *Server) testBackup(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	// Same normalization (default ports...) and checks as when saving.
+	// Testing an existing job: the stored secrets fill the empty fields
+	// (before validation, which needs them).
 	t := req.BackupTarget
+	st := s.Store.Read()
+	var stored store.BackupTarget
+	if b := st.FindBackup(req.ID); b != nil && b.Target.Kind == t.Kind {
+		stored = b.Target
+		backups.KeepSecrets(&t, stored)
+	}
+	// Same normalization (default ports...) and checks as when saving.
 	if err := backups.ValidateTarget(&t, "test"); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
-	}
-	st := s.Store.Read()
-	stored := ""
-	if b := st.FindBackup(req.ID); b != nil {
-		stored = b.Target.Password
 	}
 	msg, err := s.Backups.Test(r.Context(), t, stored)
 	if err != nil {

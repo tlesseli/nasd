@@ -32,8 +32,10 @@ type Service struct {
 	Store     *store.Store
 	Jobs      *jobs.Manager
 	Run       run.Func // for quick commands outside jobs (tests, key generation)
-	DataDir   string   // /var/lib/nasd: SSH key, known_hosts, temporary password files
-	MountBase string   // /run/nasd/usb: where USB disks are mounted during a job
+	RunInput  run.InputFunc
+	RunEnv    run.EnvFunc
+	DataDir   string // /var/lib/nasd: SSH key, known_hosts, temporary password files
+	MountBase string // /run/nasd/usb: where USB disks are mounted during a job
 	Now       func() time.Time
 	// Notify raises an alert (nil in tests).
 	Notify func(kind, subject, body string)
@@ -48,7 +50,7 @@ type Service struct {
 
 func NewService(st *store.Store, jm *jobs.Manager, dataDir string) *Service {
 	return &Service{
-		Store: st, Jobs: jm, Run: run.Exec, DataDir: dataDir, MountBase: "/run/nasd/usb", Now: time.Now,
+		Store: st, Jobs: jm, Run: run.Exec, RunInput: run.ExecInput, RunEnv: run.ExecEnv, DataDir: dataDir, MountBase: "/run/nasd/usb", Now: time.Now,
 		lastFired: map[int]time.Time{}, pending: map[int]time.Time{}, usbPending: map[string]time.Time{},
 	}
 }
@@ -145,8 +147,10 @@ func ValidateTarget(t *store.BackupTarget, share string) error {
 			t.Port = 873
 		}
 		t.USBUUID = ""
+	case "s3":
+		return validateS3(t)
 	default:
-		return errors.New("choose where to back up: usb, ssh or rsync")
+		return errors.New("choose where to back up: usb, ssh, rsync or s3")
 	}
 	if t.Port < 0 || t.Port > 65535 {
 		return errors.New("invalid port")
@@ -167,7 +171,9 @@ func (s *Service) List() []store.BackupJob {
 	st := s.Store.Read()
 	out := st.Backups
 	for i := range out {
-		out[i].Target.Password = "" // never sent back to the browser
+		t := &out[i].Target
+		t.Encrypted = t.EncryptPassword != ""
+		t.Password, t.SecretKey, t.EncryptPassword = "", "", "" // never sent back to the browser
 	}
 	if out == nil {
 		out = []store.BackupJob{}
@@ -180,6 +186,11 @@ func (s *Service) List() []store.BackupJob {
 func (s *Service) Save(j store.BackupJob) (int, error) {
 	var id int
 	err := s.Store.Update(func(st *store.State) error {
+		// Secrets aren't sent to the browser: an empty field on update means
+		// "keep the stored one" (merged before validation, which needs them).
+		if old := st.FindBackup(j.ID); j.ID != 0 && old != nil && old.Target.Kind == j.Target.Kind {
+			keepSecrets(&j.Target, old.Target)
+		}
 		if err := Validate(&j, st); err != nil {
 			return err
 		}
@@ -192,9 +203,6 @@ func (s *Service) Save(j store.BackupJob) (int, error) {
 			old := st.FindBackup(j.ID)
 			if old == nil {
 				return fmt.Errorf("backup job %d not found", j.ID)
-			}
-			if j.Target.Kind == "rsync" && j.Target.Password == "" && old.Target.Kind == "rsync" {
-				j.Target.Password = old.Target.Password
 			}
 			j.LastRun = old.LastRun
 			*old = j
@@ -213,6 +221,24 @@ func (s *Service) Delete(id int) error {
 		st.Backups = slices.DeleteFunc(st.Backups, func(b store.BackupJob) bool { return b.ID == id })
 		return nil
 	})
+}
+
+// KeepSecrets fills empty secret fields from the stored target (the browser
+// never receives them, so "empty" means "unchanged").
+func KeepSecrets(t *store.BackupTarget, old store.BackupTarget) { keepSecrets(t, old) }
+
+func keepSecrets(t *store.BackupTarget, old store.BackupTarget) {
+	if t.Password == "" {
+		t.Password = old.Password
+	}
+	if t.SecretKey == "" {
+		t.SecretKey = old.SecretKey
+	}
+	// The encryption password can't be "unset" by leaving it empty: changing
+	// it would make the existing archive unreadable anyway.
+	if t.EncryptPassword == "" {
+		t.EncryptPassword = old.EncryptPassword
+	}
 }
 
 // SharesUsedBy lists backup jobs using a share (to block deleting it).

@@ -61,6 +61,9 @@ func (s *Service) execute(ctx context.Context, j *jobs.Job, b store.BackupJob, s
 	if _, err := os.Stat(sharePath); err != nil {
 		return "", fmt.Errorf("share folder %s is not available (volume not mounted?)", sharePath)
 	}
+	if b.Target.Kind == "s3" {
+		return s.executeRclone(ctx, j, b, sharePath)
+	}
 	remote, extra, cleanup, err := s.prepareTarget(ctx, j, b)
 	defer cleanup()
 	if err != nil {
@@ -174,6 +177,8 @@ func describe(t store.BackupTarget) string {
 		return "USB disk " + t.USBUUID + ":/" + t.Path
 	case "ssh":
 		return fmt.Sprintf("%s@%s:%s", t.User, t.Host, t.Path)
+	case "s3":
+		return fmt.Sprintf("s3://%s/%s (%s %s)", t.Bucket, t.Path, t.Provider, t.Region)
 	default:
 		return rsyncURL(t)
 	}
@@ -326,7 +331,10 @@ func (s *Service) FormatUSB(ctx context.Context, r run.Func, disk, fstype, label
 
 // Test checks that a target is reachable and that the NAS can log in,
 // without copying anything. It answers within ~20 s.
-func (s *Service) Test(ctx context.Context, t store.BackupTarget, storedPassword string) (string, error) {
+func (s *Service) Test(ctx context.Context, t store.BackupTarget, stored store.BackupTarget) (string, error) {
+	if stored.Kind == t.Kind {
+		keepSecrets(&t, stored)
+	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	switch t.Kind {
@@ -354,10 +362,22 @@ func (s *Service) Test(ctx context.Context, t store.BackupTarget, storedPassword
 			return "", fmt.Errorf("SSH login failed. Is the NAS key in %s's authorized_keys? %w", t.User, err)
 		}
 		return fmt.Sprintf("Logged in to %s as %s; folder %s is ready", t.Host, t.User, t.Path), nil
-	case "rsync":
-		if t.Password == "" {
-			t.Password = storedPassword
+	case "s3":
+		if err := validateS3(&t); err != nil {
+			return "", err
 		}
+		env, remote, err := s.rcloneRemote(ctx, t, false)
+		if err != nil {
+			return "", err
+		}
+		out, err := s.RunEnv(ctx, env, "rclone", "--config", "", "lsf", "--max-depth", "1", remote)
+		if err != nil {
+			return "", fmt.Errorf("cannot reach the bucket: %w", err)
+		}
+		n := len(strings.Fields(string(out)))
+		return fmt.Sprintf("Connected to %s/%s (%d items at the top)%s", t.Bucket, t.Path, n,
+			map[bool]string{true: ", encrypted", false: ""}[t.EncryptPassword != ""]), nil
+	case "rsync":
 		opts := []string{"--list-only", "--port", fmt.Sprint(t.Port)}
 		if t.Password != "" {
 			f, err := os.CreateTemp(s.DataDir, ".rsync-pass-*")

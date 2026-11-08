@@ -40,9 +40,10 @@ type Snapshot struct {
 }
 
 type Job struct {
-	mu   sync.Mutex
-	snap Snapshot
-	exec run.Func
+	mu      sync.Mutex
+	snap    Snapshot
+	exec    run.Func
+	execEnv run.EnvFunc
 }
 
 func (j *Job) Logf(format string, args ...any) {
@@ -54,8 +55,21 @@ func (j *Job) Logf(format string, args ...any) {
 // Run executes a command and records it (and its output) in the job log.
 // Its signature matches run.Func so job steps can pass j.Run around.
 func (j *Job) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return j.logged(name, args, func() ([]byte, error) { return j.exec(ctx, name, args...) })
+}
+
+// RunEnv is Run with extra environment variables. Only the command is
+// logged, never the environment: it carries secrets.
+func (j *Job) RunEnv(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
+	if j.execEnv == nil { // tests without an env runner
+		return j.Run(ctx, name, args...)
+	}
+	return j.logged(name, args, func() ([]byte, error) { return j.execEnv(ctx, env, name, args...) })
+}
+
+func (j *Job) logged(name string, args []string, do func() ([]byte, error)) ([]byte, error) {
 	j.Logf("$ %s %s", name, strings.Join(args, " "))
-	out, err := j.exec(ctx, name, args...)
+	out, err := do()
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	if len(lines) > maxOutputLines {
 		lines = append(lines[:maxOutputLines], fmt.Sprintf("... (%d more lines)", len(lines)-maxOutputLines))
@@ -80,8 +94,11 @@ func (j *Job) snapshot() Snapshot {
 }
 
 type Manager struct {
-	mu      sync.Mutex
-	exec    run.Func
+	mu   sync.Mutex
+	exec run.Func
+	// EnvExec runs commands with extra environment variables (secrets for
+	// rclone). nil in tests: RunEnv then falls back to Run.
+	EnvExec run.EnvFunc
 	nextID  int
 	running bool
 	jobs    []*Job // most recent last
@@ -103,7 +120,7 @@ func (m *Manager) Start(title string, timeout time.Duration, fn func(ctx context
 	}
 	m.running = true
 	m.nextID++
-	j := &Job{exec: m.exec, snap: Snapshot{ID: m.nextID, Title: title, Status: Running, Started: time.Now()}}
+	j := &Job{exec: m.exec, execEnv: m.EnvExec, snap: Snapshot{ID: m.nextID, Title: title, Status: Running, Started: time.Now()}}
 	m.jobs = append(m.jobs, j)
 	if len(m.jobs) > keepJobs {
 		m.jobs = m.jobs[len(m.jobs)-keepJobs:]

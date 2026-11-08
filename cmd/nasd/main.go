@@ -98,6 +98,7 @@ func main() {
 	}
 
 	jm := jobs.NewManager(run.Exec)
+	jm.EnvExec = run.ExecEnv
 	al := alerts.NewService(st)
 	bk := backups.NewService(st, jm, *dataDir)
 	bk.Notify = al.Notify

@@ -57,6 +57,7 @@ packages:
   - quota          # disk quotas (setquota, repquota)
   - vsftpd         # FTP / FTPS
   - lftp           # FTP client (tests)
+  - rclone         # cloud archive (S3: AWS, Scaleway…)
   # The cloud kernel has no USB storage drivers: use Debian's standard
   # kernel, the same one the real ReadyNAS will run.
   - linux-image-amd64

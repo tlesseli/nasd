@@ -60,6 +60,20 @@
     }
   }
 
+  function askThaw(b) {
+    dialog = {
+      title: `Request retrieval of ${b.name}?`,
+      message: 'Archived files are frozen: the provider must first prepare them (bulk tier, the cheapest: usually 12 to 48 hours). '
+        + 'They then stay readable for 7 days; run a job in the direction "into the share" to restore them. Retrieval is billed per GB by the provider.',
+      confirmLabel: 'Request retrieval',
+      danger: false,
+      onConfirm: async () => {
+        job = await api.post(`/api/backups/${b.id}/thaw`, { days: 7 })
+        dialog = null
+      },
+    }
+  }
+
   function askDelete(b) {
     dialog = {
       title: `Delete backup job ${b.name}?`,
@@ -116,6 +130,7 @@
         return `USB disk ${v ? v.label || v.device : `(not plugged in)`} · ${t.path}`
       }
       case 'ssh': return `${t.user}@${t.host}:${t.path}`
+      case 's3': return `${{ aws: 'AWS', scaleway: 'Scaleway', other: 'S3' }[t.provider]} · ${t.bucket}${t.path ? '/' + t.path : ''} · ${t.storageClass || 'default class'}`
       default: return `rsync://${t.user ? t.user + '@' : ''}${t.host}/${t.module}${t.path ? '/' + t.path : ''}`
     }
   }
@@ -148,8 +163,12 @@
         {:else if b.lastRun.status === 'failed'}<span class="badge bad">Failed</span>
         {:else}<span class="badge neutral">Never ran</span>{/if}
         {#if b.mirror}<span class="badge neutral">Mirror</span>{/if}
+        {#if b.target.kind === 's3'}<span class="badge info">Cloud</span>{#if b.target.encrypted}<span class="badge good">Encrypted</span>{/if}{/if}
         <span class="spacer"></span>
         <button onclick={() => runNow(b)} disabled={busy}>Run now</button>
+        {#if b.target.kind === 's3'}
+          <button class="secondary" onclick={() => askThaw(b)} disabled={busy} title="Make archived files readable again before restoring">Request retrieval</button>
+        {/if}
         <button class="secondary" onclick={() => (editing = b)} disabled={!!editing}>Edit</button>
         <button class="secondary danger-text" onclick={() => askDelete(b)}>Delete</button>
       </div>

@@ -109,6 +109,19 @@ type BackupTarget struct {
 	Password string `json:"password,omitempty"` // rsync only (ssh uses the NAS key)
 	Module   string `json:"module,omitempty"`   // rsync
 	Path     string `json:"path"`               // folder on the target
+
+	// Cloud archive (kind "s3"): AWS S3, Scaleway Object Storage, or any
+	// S3-compatible service.
+	Provider        string `json:"provider,omitempty"` // aws, scaleway, other
+	Region          string `json:"region,omitempty"`
+	Endpoint        string `json:"endpoint,omitempty"` // only for "other"
+	Bucket          string `json:"bucket,omitempty"`
+	AccessKey       string `json:"accessKey,omitempty"`
+	SecretKey       string `json:"secretKey,omitempty"`       // never sent to the browser
+	StorageClass    string `json:"storageClass,omitempty"`    // DEEP_ARCHIVE, GLACIER...
+	EncryptPassword string `json:"encryptPassword,omitempty"` // client-side encryption (never sent back)
+	Encrypted       bool   `json:"encrypted,omitempty"`       // for display: a password is set
+	BandwidthKB     int    `json:"bandwidthKB,omitempty"`     // upload limit, KiB/s (0 = none)
 }
 
 type Schedule struct {

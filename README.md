@@ -36,7 +36,9 @@ UI: https://localhost:8443 (accept the self-signed certificate warning once).
 3. [x] Volumes: RAID 0/1/5/6/10 (mdadm), hot spare, replace disk, expand RAID 5/6
 4. [x] Shares + users (Samba SMB2+), guest access, recycle bin, Time Machine, discovery;
        per-share services: SMB, FTP/FTPS (vsftpd, per-user views), rsync read-only or read-write
-5b. [x] Backups: rsync jobs to/from USB, SSH, rsync server; schedule; rsync service; allowed hosts
+5b. [x] Backups: rsync jobs to/from USB, SSH, rsync server; schedule; rsync service; allowed hosts;
+       cold cloud archive with rclone (AWS S3 Glacier Deep Archive, Scaleway Glacier, any S3):
+       client-side encryption, bandwidth limit, retrieval request + restore
 5. [x] Alerts & health: email alerts (contacts, SMTP, test, per-event switches), temperatures/fans,
        SMART details, system logs, volume maintenance (scheduled scrub + parity repair, fs check)
 5c. [x] Power & system: disk spin-down, power schedule, UPS (NUT), Wake-on-LAN; hostname, time/NTP,

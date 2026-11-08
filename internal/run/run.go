@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -20,7 +21,7 @@ type Func func(ctx context.Context, name string, args ...string) ([]byte, error)
 // never through a shell, so a volume name like "x; rm -rf /" can't inject
 // commands (and we validate names anyway).
 func Exec(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return execute(ctx, nil, name, args...)
+	return execute(ctx, nil, nil, name, args...)
 }
 
 // InputFunc is a Func that also writes data to the command's stdin.
@@ -29,12 +30,25 @@ type InputFunc func(ctx context.Context, stdin string, name string, args ...stri
 // ExecInput is Exec with stdin. Secrets (passwords) go through stdin, never
 // through arguments: every user on the machine can read arguments with `ps`.
 func ExecInput(ctx context.Context, stdin string, name string, args ...string) ([]byte, error) {
-	return execute(ctx, strings.NewReader(stdin), name, args...)
+	return execute(ctx, strings.NewReader(stdin), nil, name, args...)
 }
 
-func execute(ctx context.Context, stdin io.Reader, name string, args ...string) ([]byte, error) {
+// EnvFunc is a Func with extra environment variables ("KEY=value").
+type EnvFunc func(ctx context.Context, env []string, name string, args ...string) ([]byte, error)
+
+// ExecEnv runs a command with extra environment variables. Like stdin, the
+// environment keeps secrets out of the arguments: /proc/<pid>/environ is
+// readable only by the process's owner and root.
+func ExecEnv(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
+	return execute(ctx, nil, env, name, args...)
+}
+
+func execute(ctx context.Context, stdin io.Reader, env []string, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdin = stdin
+	if env != nil {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -44,6 +58,11 @@ func execute(ctx context.Context, stdin io.Reader, name string, args ...string) 
 			msg = strings.TrimSpace(string(out))
 		}
 		return out, fmt.Errorf("%s failed (%w): %s", name, err, msg) // %w: callers can inspect the exit code
+	}
+	// Tools started with an environment (rclone) report their statistics on
+	// stderr: keep them with the output so the job log and summary see them.
+	if env != nil && stderr.Len() > 0 {
+		out = append(out, stderr.Bytes()...)
 	}
 	return out, nil
 }
