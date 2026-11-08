@@ -89,7 +89,54 @@ write_files:
       PART=\$(cat /sys/class/block/\$(basename "\$ROOT")/partition)
       growpart "\$DISK" "\$PART" || true
       resize2fs "\$ROOT"
+      # On the ReadyNAS, Netgear's boot loader on the internal flash starts
+      # our kernel: mount that flash on /boot/flash so updates reach it.
+      # It is recognised by Netgear's "vpd" file next to our kernel.
+      mkdir -p /mnt/probe /boot/flash
+      for DEV in \$(blkid -t TYPE=vfat -o device); do
+        mount -o ro "\$DEV" /mnt/probe 2>/dev/null || continue
+        if [ -f /mnt/probe/vpd ] && [ -f /mnt/probe/nas.krn ] && ! grep -q /boot/flash /etc/fstab; then
+          echo "UUID=\$(blkid -s UUID -o value "\$DEV") /boot/flash vfat defaults,nofail 0 0" >> /etc/fstab
+        fi
+        umount /mnt/probe
+      done
+      systemctl daemon-reload
+      mount /boot/flash 2>/dev/null && /usr/local/sbin/nas-flash-sync || true
       touch /var/lib/nas-firstboot.done
+  # Copies the newest kernel and initramfs to the ReadyNAS flash (nas.krn,
+  # nas.ird). Called after kernel and initramfs updates; no-op elsewhere.
+  - path: /usr/local/sbin/nas-flash-sync
+    permissions: '0755'
+    content: |
+      #!/bin/sh
+      FLASH=/boot/flash
+      mountpoint -q \$FLASH || exit 0
+      K=\$(ls -1 /boot/vmlinuz-* 2>/dev/null | sort -V | tail -1)
+      V=\${K#/boot/vmlinuz-}
+      I=/boot/initrd.img-\$V
+      [ -f "\$K" ] && [ -f "\$I" ] || exit 0
+      cmp -s "\$K" \$FLASH/nas.krn || cp "\$K" \$FLASH/nas.krn || exit 1
+      cmp -s "\$I" \$FLASH/nas.ird || cp "\$I" \$FLASH/nas.ird || exit 1
+      sync
+      echo "nas-flash-sync: the flash boots \$V"
+  - path: /etc/kernel/postinst.d/zz-nas-flash
+    permissions: '0755'
+    content: |
+      #!/bin/sh
+      /usr/local/sbin/nas-flash-sync || echo "WARNING: could not update the boot flash" >&2
+      exit 0
+  - path: /etc/kernel/postrm.d/zz-nas-flash
+    permissions: '0755'
+    content: |
+      #!/bin/sh
+      /usr/local/sbin/nas-flash-sync || echo "WARNING: could not update the boot flash" >&2
+      exit 0
+  - path: /etc/initramfs/post-update.d/nas-flash
+    permissions: '0755'
+    content: |
+      #!/bin/sh
+      /usr/local/sbin/nas-flash-sync || echo "WARNING: could not update the boot flash" >&2
+      exit 0
   - path: /etc/systemd/system/nas-firstboot.service
     content: |
       [Unit]
@@ -130,4 +177,5 @@ grep -q 'linux-image-amd64' build/provision.log || true
 echo ">> converting to a raw disk image"
 qemu-img convert -O raw build/nas.qcow2 nas.raw
 ls -lh nas.raw
+./flash-files.sh
 echo ">> done. Test it with image/test.sh, then write it with image/write.sh"

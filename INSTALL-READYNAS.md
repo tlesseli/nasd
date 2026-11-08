@@ -1,13 +1,21 @@
-# Installing on the ReadyNAS (RND-4A / NVX, Atom D410)
+# Installing on the ReadyNAS Ultra 4 (RNDU4000, sticker RND-4A, Atom D410)
 
-No password from the old OS (RAIDiator) is needed: we don't log into it, we
-replace it. The new system lives on a **USB SSD or USB stick** (≥ 16 GB), so
-the four bays stay for data.
+No password from the old OS (RAIDiator) is needed to replace it, but having
+admin access (and root SSH through the EnableRootSSH add-on) makes it simple.
+
+How the ReadyNAS starts: the BIOS boots a small **internal USB flash**
+(125 MB, FAT16) holding Netgear's boot loader (SYSLINUX 3.31, patched) and
+RAIDiator's kernel. RAIDiator itself then runs from the data disks (a RAID1
+`md0` on partition 1 of each disk).
+
+Our system lives on a **USB SSD or USB stick** (≥ 16 GB). We add our kernel
+next to RAIDiator's on the flash and make it the default: the boot loader then
+starts Debian from the USB disk. The four bays stay for data.
 
 ## What you need
 - a USB SSD (recommended) or a good USB stick, **16 GB or more**
-- a network cable from the NAS to your router (DHCP)
-- this PC
+- a network cable from the NAS to your router or modem (DHCP)
+- this PC, and the NAS admin (= root) password
 
 ## 1. Build and test the image (on the PC)
 ```
@@ -17,62 +25,80 @@ image/test.sh        # optional: boots it as a USB disk in QEMU (SSH :2223, UI :
 ```
 `image/build.sh` also creates:
 - `image/id_ed25519`: the SSH key of the NAS administrator account (`nas`),
-- `image/credentials.txt`: a console password (serial console only; SSH uses the key).
+- `image/credentials.txt`: a console password (serial console only; SSH uses the key),
+- `image/build/flash/`: the three files for the flash (`nas.krn`, `nas.ird`, `syslinux.cfg`).
 
-Keep both: they are your way into the system (never committed to git).
+Keep the key and the password: they are your way into the system (never committed to git).
 
-## 2. Write it on the USB disk
+## 2. Write the USB disk
 ```
 sudo image/write.sh              # lists the USB disks
 sudo image/write.sh /dev/sdX     # erases sdX and writes the system
 ```
 The script refuses anything that isn't a USB disk and asks you to type its name.
 
-## 3. Start the NAS from it
-1. Power the NAS off. Leave the disks in place (their old data is erased later, from the UI).
-2. Plug the USB disk into the **front** USB port.
-3. **Hold the Backup button** while pressing Power, and keep holding it until
-   the disk LEDs start blinking (~10 s). This makes the ReadyNAS boot from the
-   front USB port instead of its internal flash.
-4. Wait 2-3 minutes (first boot: the system partition grows to fill the disk).
-
-If it doesn't boot from the USB disk (old OS starts, or nothing happens), stop
-there: we'll use the serial port at the back or the internal VGA header.
-
-## 4. Find it and sign in
-- Web interface: **https://nas.local:8443** (or the IP your router gave it,
-  listed in the router's DHCP table). Accept the certificate warning, then
-  choose the **admin password**.
-- SSH: `ssh -i image/id_ed25519 nas@nas.local`
-- Updates of nasd from this PC: `make deploy NAS=nas@nas.local`
-
-## 5. Back up the internal flash (before anything else)
-The ReadyNAS boots from a small internal flash module (~128-256 MB). Copy it
-once: it lets you go back to RAIDiator at any time, and it shows which
-drivers RAIDiator used (front display, buttons).
+## 3. Root SSH into RAIDiator
+RAIDiator's SSH is from 2007: allow its old algorithms for this host only.
 ```
-ssh -i image/id_ed25519 nas@nas.local 'lsblk -d -o NAME,SIZE,MODEL,TRAN'   # the small USB disk
-ssh -i image/id_ed25519 nas@nas.local 'sudo dd if=/dev/sdX bs=1M' > readynas-flash.img
+# ~/.ssh/config
+Host datanas
+    HostName 192.168.0.6
+    User root
+    KexAlgorithms +diffie-hellman-group14-sha1
+    HostKeyAlgorithms +ssh-rsa
+    PubkeyAcceptedAlgorithms +ssh-rsa
 ```
+(Its web interface only speaks TLS 1.0; modern browsers refuse it.)
 
-## 6. Boot without the Backup button
-Two ways, to decide together once the flash is backed up:
-- **BIOS boot order** (needs a screen: VGA header or serial adapter), or
-- **a small bootloader on the internal flash** that starts the system on the
-  USB disk (no screen needed; reversible with the backup of step 5).
+## 4. Back up the flash
+RAIDiator detaches the flash after booting. Re-attach it (read-only operation):
+```
+ssh datanas 'echo 2-1:1.0 > /sys/bus/usb/drivers/usb-storage/bind; sleep 3; grep sde /proc/partitions'
+ssh datanas 'dd if=/dev/sde bs=1M' > image/readynas-flash.img      # 125,304,832 bytes
+```
+RAIDiator then mounts it on `/USB/USB_FLASH_1`.
 
-## 7. Hardware checks
+## 5. Put our kernel on the flash
+```
+cd image/build/flash
+tar cf - nas.krn nas.ird syslinux.cfg | ssh datanas 'cd /USB/USB_FLASH_1 && tar xf - && sync && md5sum nas.krn nas.ird syslinux.cfg'
+md5sum nas.krn nas.ird syslinux.cfg     # must match the line above
+```
+The new `syslinux.cfg` boots `NAS` by default and keeps every RAIDiator entry
+(Normal, OSReinstall, ...).
+
+## 6. Start our system
+1. Shut RAIDiator down (`ssh datanas poweroff`).
+2. Plug the USB disk into a **back** USB port (keep the front one for USB copy).
+3. Power on. First boot takes 2-3 minutes: the system partition grows to
+   fill the disk, and the flash is found and mounted on `/boot/flash`.
+
+## 7. Find it and sign in
+- Web interface: **https://<ip>:8443**: the IP is in the router/modem's DHCP
+  table (`nas.local` works only when the PC is on the same network segment).
+  Accept the certificate warning, then choose the **admin password**.
+- SSH: `ssh -i image/id_ed25519 nas@<ip>`
+- Updates of nasd from this PC: `make deploy NAS=nas@<ip>`
+
+Kernel updates keep working: a hook (`nas-flash-sync`) copies every new kernel
+and initramfs to the flash.
+
+## 8. Hardware checks
 In the web interface:
-- **Volumes & Disks**: the old RAIDiator arrays appear as volumes or "old data":
-  delete / erase them, then create your volume. Check that bays 1-4 match the
-  physical bays (Locate).
-- **System Settings → Hardware**: Learn the Backup button, test Locate, check
-  the fan and temperatures, look at the front display.
-- Over SSH, if sensors are missing: `sudo sensors-detect` (the board's chip).
+- **Volumes & Disks**: the old RAIDiator arrays (md0/md1/md2) appear as old
+  data: delete / erase them, then create your volume. Check that bays 1-4
+  match the physical bays (Locate).
+- **System Settings → Hardware**: fan and temperatures (IT8721F chip, `it87`
+  driver), front display, Backup button (Netgear's own `pvgpio` driver in
+  RAIDiator: still to be mapped).
 - Network: both ports, bonding, Wake-on-LAN, power schedule (power-on alarm).
 
 ## Going back to RAIDiator
-Unplug the USB disk: the NAS boots its internal flash again (as long as step 6
-wasn't done; otherwise write `readynas-flash.img` back to the flash first).
-RAIDiator's boot menu (Reset + Power) then offers **OS reinstall**, which resets
-its admin password to `netgear1`.
+Write the backup back on the flash (from our system):
+```
+ssh -i image/id_ed25519 nas@<ip> 'sudo umount /boot/flash; sudo dd of=$(ls /dev/disk/by-id/usb-SMI_USB_DISK*0:0) bs=1M conv=fsync' < image/readynas-flash.img
+```
+(or simply change `default NAS` to `default Normal` in `/boot/flash/syslinux.cfg`),
+then unplug the USB disk. As long as the data disks weren't erased, RAIDiator
+starts as before. Otherwise its boot menu (Reset + Power) offers **OS
+reinstall**, which also resets the admin password to `netgear1`.

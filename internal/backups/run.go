@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"readynas/internal/disks"
 	"readynas/internal/jobs"
 	"readynas/internal/run"
 	"readynas/internal/store"
@@ -227,21 +228,38 @@ type USBDisk struct {
 
 // USBDisks lists plugged USB disks and the filesystems on them.
 func (s *Service) USBDisks(ctx context.Context) ([]USBDisk, error) {
-	out, err := s.Run(ctx, "lsblk", "--json", "--bytes", "--tree", "-o", "NAME,PATH,SIZE,MODEL,TRAN,TYPE,FSTYPE,UUID,LABEL")
+	out, err := s.Run(ctx, "lsblk", "--json", "--bytes", "--tree", "-o", "NAME,PATH,SIZE,MODEL,TRAN,TYPE,FSTYPE,UUID,LABEL,MOUNTPOINTS")
 	if err != nil {
 		return nil, err
 	}
 	type dev struct {
-		Name     string  `json:"name"`
-		Path     string  `json:"path"`
-		Size     int64   `json:"size"`
-		Model    *string `json:"model"`
-		Tran     *string `json:"tran"`
-		Type     string  `json:"type"`
-		FSType   *string `json:"fstype"`
-		UUID     *string `json:"uuid"`
-		Label    *string `json:"label"`
-		Children []dev   `json:"children"`
+		Name     string    `json:"name"`
+		Path     string    `json:"path"`
+		Size     int64     `json:"size"`
+		Model    *string   `json:"model"`
+		Tran     *string   `json:"tran"`
+		Type     string    `json:"type"`
+		FSType   *string   `json:"fstype"`
+		UUID     *string   `json:"uuid"`
+		Label    *string   `json:"label"`
+		Mounts   []*string `json:"mountpoints"`
+		Children []dev     `json:"children"`
+	}
+	// The system itself can live on a USB disk (the ReadyNAS boots from one,
+	// plus its internal flash): never offer those as backup disks.
+	var system func(d dev) bool
+	system = func(d dev) bool {
+		for _, m := range d.Mounts {
+			if m != nil && disks.IsSystemMount(*m) {
+				return true
+			}
+		}
+		for _, c := range d.Children {
+			if system(c) {
+				return true
+			}
+		}
+		return false
 	}
 	var doc struct {
 		Blockdevices []dev `json:"blockdevices"`
@@ -257,7 +275,7 @@ func (s *Service) USBDisks(ctx context.Context) ([]USBDisk, error) {
 	}
 	disks := []USBDisk{}
 	for _, d := range doc.Blockdevices {
-		if d.Type != "disk" || str(d.Tran) != "usb" {
+		if d.Type != "disk" || str(d.Tran) != "usb" || system(d) {
 			continue
 		}
 		disk := USBDisk{Disk: d.Name, Model: str(d.Model), Size: d.Size, Volumes: []USBVolume{}}

@@ -193,11 +193,18 @@ func isVirtualDevice(name string) bool {
 	return false
 }
 
+// IsSystemMount reports whether a mount point belongs to the OS: the root,
+// /boot, /boot/efi, and /boot/flash (the ReadyNAS's internal flash, which
+// holds the kernel that Netgear's boot loader starts).
+func IsSystemMount(m string) bool {
+	return m == "/" || m == "/boot" || strings.HasPrefix(m, "/boot/")
+}
+
 // holdsSystem reports whether the OS root (/) lives on this disk, directly
 // or through a partition / RAID / LVM device stacked on top of it.
 func holdsSystem(d lsblkDev) bool {
 	for _, m := range d.Mountpoints {
-		if m != nil && (*m == "/" || *m == "/boot" || *m == "/boot/efi") {
+		if m != nil && IsSystemMount(*m) {
 			return true
 		}
 	}

@@ -16,7 +16,12 @@ import (
 const usbLsblk = `{"blockdevices":[
  {"name":"sda","path":"/dev/sda","size":100,"model":"DISK","tran":"sata","type":"disk","fstype":null,"uuid":null,"label":null},
  {"name":"sde","path":"/dev/sde","size":1000,"model":"Stick","tran":"usb","type":"disk","fstype":null,"uuid":null,"label":null,
-  "children":[{"name":"sde1","path":"/dev/sde1","size":999,"model":null,"tran":null,"type":"part","fstype":"exfat","uuid":"ABCD-1234","label":"BACKUP"}]}]}`
+  "children":[{"name":"sde1","path":"/dev/sde1","size":999,"model":null,"tran":null,"type":"part","fstype":"exfat","uuid":"ABCD-1234","label":"BACKUP"}]},
+ {"name":"sdf","path":"/dev/sdf","size":125,"model":"USB DISK","tran":"usb","type":"disk","fstype":null,"uuid":null,"label":null,
+  "children":[{"name":"sdf1","path":"/dev/sdf1","size":124,"type":"part","fstype":"vfat","uuid":"4C74-AA3E","label":null,"mountpoints":["/boot/flash"]}]},
+ {"name":"sdg","path":"/dev/sdg","size":16000,"model":"SSD","tran":"usb","type":"disk","fstype":null,"uuid":null,"label":null,
+  "children":[{"name":"sdg1","path":"/dev/sdg1","size":15000,"type":"part","fstype":"ext4","uuid":"1111","label":null,"mountpoints":["/"]},
+   {"name":"sdg15","path":"/dev/sdg15","size":124,"type":"part","fstype":"vfat","uuid":"2222","label":null,"mountpoints":["/boot/efi"]}]}]}`
 
 type fake struct {
 	mu   sync.Mutex
@@ -260,5 +265,18 @@ func TestUSBCopyOnConnection(t *testing.T) {
 	}
 	if err := s.SaveUSBCopy(store.USBCopy{Enabled: true, Share: "Photos", Path: "../etc"}); err == nil {
 		t.Error("'..' must be refused")
+	}
+}
+
+// On the ReadyNAS the system disk and the internal boot flash are USB disks
+// too: they must never be offered for backups or USB copy.
+func TestUSBDisksSkipsSystemDisks(t *testing.T) {
+	s, _, _ := newTestService(t)
+	list, err := s.USBDisks(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].Disk != "sde" {
+		t.Fatalf("want only sde, got %+v", list)
 	}
 }
