@@ -72,6 +72,9 @@ func renderSmbConf(st store.State) string {
 `)
 	}
 	for _, sh := range st.Shares {
+		if sh.SMBDisabled {
+			continue // not offered over SMB at all
+		}
 		b.WriteString("\n")
 		writeShare(&b, sh)
 	}
@@ -205,7 +208,7 @@ func renderAvahi(st store.State) string {
 `)
 	var tm []string
 	for _, sh := range st.Shares {
-		if sh.TimeMachine {
+		if sh.TimeMachine && !sh.SMBDisabled {
 			tm = append(tm, sh.Name)
 		}
 	}

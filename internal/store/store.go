@@ -40,6 +40,9 @@ type Share struct {
 	TimeMachine bool              `json:"timeMachine"`
 	RsyncRead   bool              `json:"rsyncRead"` // readable by the rsync service (for backups by another machine)
 	Hidden      bool              `json:"hidden"`    // works, but not listed when browsing the NAS
+	// SMBDisabled: not offered over SMB (e.g. an rsync-only backup source).
+	// "Disabled" so that shares saved before this option keep SMB.
+	SMBDisabled bool `json:"smbDisabled"`
 	// AllowedHosts restricts SMB and rsync access to these IPs / networks
 	// (empty = the whole LAN).
 	AllowedHosts []string `json:"allowedHosts"`
@@ -49,10 +52,13 @@ type Share struct {
 // an older state.json reads as false, so the safe default (SMB on) must be
 // the zero value.
 type Settings struct {
-	SMBDisabled  bool       `json:"smbDisabled"`
-	RsyncEnabled bool       `json:"rsyncEnabled"`
-	HomeShares   HomeShares `json:"homeShares"`
-	USBCopy      USBCopy    `json:"usbCopy"`
+	SMBDisabled  bool `json:"smbDisabled"`
+	RsyncEnabled bool `json:"rsyncEnabled"`
+	// Discovery announces the NAS (not single shares) on the network.
+	WSDDisabled     bool       `json:"wsdDisabled"`     // Windows (WS-Discovery, wsdd2)
+	BonjourDisabled bool       `json:"bonjourDisabled"` // macOS (Bonjour / mDNS, Avahi)
+	HomeShares      HomeShares `json:"homeShares"`
+	USBCopy         USBCopy    `json:"usbCopy"`
 }
 
 // HomeShares gives every user a private share named after them.

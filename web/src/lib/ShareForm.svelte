@@ -2,7 +2,7 @@
   import { untrack } from 'svelte'
 
   // Create or edit a share. `share` is null for a new one.
-  let { share: shareProp = null, volumes: volumesProp, users: usersProp, rsyncEnabled = false, onSave, onCancel } = $props()
+  let { share: shareProp = null, volumes: volumesProp, users: usersProp, settings = {}, onSave, onCancel } = $props()
 
   // The form works on a snapshot taken when it opens: the page refreshing its
   // lists in the background must not reset what you're typing.
@@ -18,6 +18,7 @@
   let timeMachine = $state(share?.timeMachine ?? false)
   let rsyncRead = $state(share?.rsyncRead ?? false)
   let hidden = $state(share?.hidden ?? false)
+  let smb = $state(!(share?.smbDisabled ?? false))
   let allowedHosts = $state((share?.allowedHosts ?? []).join(', '))
   let busy = $state(false)
   let error = $state('')
@@ -30,7 +31,8 @@
     error = ''
     try {
       await onSave({
-        name, volume, description, guestRead, recycleBin, timeMachine, rsyncRead, hidden,
+        name, volume, description, guestRead, recycleBin, rsyncRead, hidden: smb && hidden,
+        smbDisabled: !smb, timeMachine: smb && timeMachine,
         allowedHosts: allowedHosts.split(/[\s,]+/).filter(Boolean),
         access: Object.fromEntries(Object.entries(access).filter(([, a]) => a)),
       })
@@ -103,23 +105,35 @@
   </fieldset>
 
   <fieldset>
+    <legend>Services for this share</legend>
+    <label class="check">
+      <input type="checkbox" bind:checked={smb} />
+      <span><strong>SMB</strong> <span class="muted small">· open it from Windows, macOS, Linux and phones, with the access rights above
+        {settings.smbDisabled ? '(the SMB service is off: switch it on above the share list)' : ''}</span></span>
+    </label>
+    {#if smb}
+      <label class="check sub">
+        <input type="checkbox" checked={!hidden} onchange={(e) => (hidden = !e.currentTarget.checked)} />
+        <span><strong>Listed when browsing the network</strong> <span class="muted small">· in Windows Explorer and the macOS Finder. Unlisted, it still opens by typing its address.</span></span>
+      </label>
+      <label class="check sub">
+        <input type="checkbox" bind:checked={timeMachine} />
+        <span><strong>Time Machine</strong> <span class="muted small">· Macs can use this share as a backup disk (announced through Bonjour)</span></span>
+      </label>
+    {/if}
+    <label class="check">
+      <input type="checkbox" bind:checked={rsyncRead} />
+      <span><strong>rsync (read only)</strong> <span class="muted small">· another NAS or computer can back this share up, without a password
+        {settings.rsyncEnabled ? '' : '(the rsync service is off: switch it on above the share list)'}</span></span>
+    </label>
+    {#if !smb && !rsyncRead}<p class="hint">With no service, the share is kept but nobody can reach it over the network.</p>{/if}
+  </fieldset>
+
+  <fieldset>
     <legend>Options</legend>
     <label class="check">
       <input type="checkbox" bind:checked={recycleBin} />
-      <span><strong>Recycle bin</strong> <span class="muted small">· deleted files are moved to a hidden <span class="mono">.recycle</span> folder instead of disappearing</span></span>
-    </label>
-    <label class="check">
-      <input type="checkbox" bind:checked={timeMachine} />
-      <span><strong>Time Machine</strong> <span class="muted small">· Macs can use this share as a backup disk</span></span>
-    </label>
-    <label class="check">
-      <input type="checkbox" bind:checked={hidden} />
-      <span><strong>Hidden</strong> <span class="muted small">· not listed when browsing the NAS; open it by typing its address</span></span>
-    </label>
-    <label class="check">
-      <input type="checkbox" bind:checked={rsyncRead} />
-      <span><strong>rsync access (read only)</strong> <span class="muted small">· another NAS or computer can back this share up with rsync, without a password
-        {rsyncEnabled ? '' : '(the rsync service is currently off: switch it on above the share list)'}</span></span>
+      <span><strong>Recycle bin</strong> <span class="muted small">· files deleted over SMB are moved to a hidden <span class="mono">.recycle</span> folder instead of disappearing</span></span>
     </label>
   </fieldset>
 

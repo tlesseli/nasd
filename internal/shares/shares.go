@@ -317,6 +317,7 @@ type ShareRequest struct {
 	RsyncRead    bool              `json:"rsyncRead"`
 	AllowedHosts []string          `json:"allowedHosts"`
 	Hidden       bool              `json:"hidden"`
+	SMBDisabled  bool              `json:"smbDisabled"`
 }
 
 type ShareInfo struct {
@@ -364,6 +365,9 @@ func isShareUser(st *store.State, name string) bool {
 func validateSettings(req ShareRequest, st store.State) error {
 	if len(req.Description) > 100 || strings.ContainsAny(req.Description, "\n\r") {
 		return errors.New("description must be a single line of at most 100 characters")
+	}
+	if req.TimeMachine && req.SMBDisabled {
+		return errors.New("Time Machine works over SMB: keep SMB on for this share")
 	}
 	if len(req.AllowedHosts) > 10 {
 		return errors.New("at most 10 allowed computers or networks")
@@ -421,7 +425,7 @@ func (s *Service) CreateShare(ctx context.Context, req ShareRequest) error {
 		st.Shares = append(st.Shares, store.Share{
 			Name: req.Name, Volume: req.Volume, Path: path, Description: req.Description,
 			Access: req.Access, GuestRead: req.GuestRead, RecycleBin: req.RecycleBin, TimeMachine: req.TimeMachine,
-			RsyncRead: req.RsyncRead, AllowedHosts: req.AllowedHosts, Hidden: req.Hidden,
+			RsyncRead: req.RsyncRead, AllowedHosts: req.AllowedHosts, Hidden: req.Hidden, SMBDisabled: req.SMBDisabled,
 		})
 		return nil
 	})
@@ -461,7 +465,7 @@ func (s *Service) UpdateShare(ctx context.Context, name string, req ShareRequest
 		sh := st.FindShare(name)
 		sh.Description, sh.Access, sh.GuestRead = req.Description, req.Access, req.GuestRead
 		sh.RecycleBin, sh.TimeMachine = req.RecycleBin, req.TimeMachine
-		sh.RsyncRead, sh.AllowedHosts, sh.Hidden = req.RsyncRead, req.AllowedHosts, req.Hidden
+		sh.RsyncRead, sh.AllowedHosts, sh.Hidden, sh.SMBDisabled = req.RsyncRead, req.AllowedHosts, req.Hidden, req.SMBDisabled
 		return nil
 	})
 	if err != nil {
@@ -530,43 +534,55 @@ func (s *Service) apply(ctx context.Context) error {
 	if err := os.Rename(tmp.Name(), s.SmbConf); err != nil {
 		return err
 	}
-	// Avahi watches its services directory and reloads by itself.
-	avahiFile := filepath.Join(s.AvahiDir, "nasd-smb.service")
-	if st.Settings.SMBDisabled {
-		if _, err := s.Run(ctx, "systemctl", "disable", "--now", "smbd", "nmbd", "wsdd2"); err != nil {
-			return err
-		}
-		os.Remove(avahiFile)
-	} else {
-		if _, err := s.Run(ctx, "systemctl", "enable", "--now", "smbd", "nmbd", "wsdd2"); err != nil {
-			return err
-		}
+	// SMB itself, then the two discovery services, each with its own switch.
+	// Discovery announces the NAS; without SMB there is nothing to announce.
+	set := st.Settings
+	smbOn := !set.SMBDisabled
+	if err := s.service(ctx, smbOn, "smbd", "nmbd"); err != nil {
+		return err
+	}
+	if smbOn {
 		// Running smbd processes re-read the config; open connections pick
 		// up changes when they reconnect.
 		if _, err := s.Run(ctx, "systemctl", "reload-or-restart", "smbd"); err != nil {
 			return err
 		}
+	}
+	if err := s.service(ctx, smbOn && !set.WSDDisabled, "wsdd2"); err != nil {
+		return err
+	}
+	// Bonjour: avahi-daemon keeps running (it also answers for nas.local);
+	// only our announcement file comes and goes. Avahi reloads by itself.
+	avahiFile := filepath.Join(s.AvahiDir, "nasd-smb.service")
+	if smbOn && !set.BonjourDisabled {
 		if err := os.MkdirAll(s.AvahiDir, 0o755); err != nil {
 			return err
 		}
 		if err := os.WriteFile(avahiFile, []byte(renderAvahi(st)), 0o644); err != nil {
 			return err
 		}
+	} else {
+		os.Remove(avahiFile)
 	}
 
 	// rsync daemon: reads its config at each connection, no reload needed.
 	if err := os.WriteFile(s.RsyncConf, []byte(renderRsyncd(st)), 0o644); err != nil {
 		return err
 	}
-	action := []string{"disable", "--now", "rsync"}
-	if st.Settings.RsyncEnabled {
-		action = []string{"enable", "--now", "rsync"}
+	return s.service(ctx, set.RsyncEnabled, "rsync")
+}
+
+// service enables and starts systemd units, or stops and disables them.
+func (s *Service) service(ctx context.Context, on bool, units ...string) error {
+	action := "disable"
+	if on {
+		action = "enable"
 	}
-	_, err = s.Run(ctx, "systemctl", action...)
+	_, err := s.Run(ctx, "systemctl", append([]string{action, "--now"}, units...)...)
 	return err
 }
 
-// SetSettings switches protocols on or off.
+// SetSettings switches protocols and discovery services on or off.
 func (s *Service) SetSettings(ctx context.Context, settings store.Settings) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -574,6 +590,7 @@ func (s *Service) SetSettings(ctx context.Context, settings store.Settings) erro
 	// have their own endpoints and must not be overwritten by a stale copy.
 	if err := s.Store.Update(func(st *store.State) error {
 		st.Settings.SMBDisabled, st.Settings.RsyncEnabled = settings.SMBDisabled, settings.RsyncEnabled
+		st.Settings.WSDDisabled, st.Settings.BonjourDisabled = settings.WSDDisabled, settings.BonjourDisabled
 		return nil
 	}); err != nil {
 		return err

@@ -10,7 +10,7 @@
   let shares = $state([])
   let users = $state([])
   let volumes = $state([])
-  let settings = $state({ smbDisabled: false, rsyncEnabled: false })
+  let settings = $state({ smbDisabled: false, rsyncEnabled: false, wsdDisabled: false, bonjourDisabled: false })
   let savingSettings = $state(false)
   let loaded = $state(false)
   let error = $state('')
@@ -90,25 +90,27 @@
   {#if notice}<p class="notice">{notice}</p>{/if}
 
   <div class="card list protocols">
-    <div class="row">
-      <label class="check">
-        <input type="checkbox" checked={!settings.smbDisabled} disabled={savingSettings}
-          onchange={(e) => toggle('smbDisabled', !e.currentTarget.checked)} />
-        <span><strong>SMB</strong> <span class="muted small">· Windows, macOS, Linux and phones open shares over SMB</span></span>
-      </label>
-    </div>
-    <div class="row">
-      <label class="check">
-        <input type="checkbox" checked={settings.rsyncEnabled} disabled={savingSettings}
-          onchange={(e) => toggle('rsyncEnabled', e.currentTarget.checked)} />
-        <span><strong>rsync</strong> <span class="muted small">· lets another machine back up shares that have "rsync access" (read only)</span></span>
-      </label>
-    </div>
+    {#each [
+      { key: 'smbDisabled', inverted: true, label: 'SMB', help: 'file sharing for Windows, macOS, Linux and phones' },
+      { key: 'wsdDisabled', inverted: true, label: 'Windows discovery', help: 'the NAS appears in Windows Explorer under Network (wsdd2)', needsSMB: true },
+      { key: 'bonjourDisabled', inverted: true, label: 'macOS discovery', help: 'the NAS appears in the Finder sidebar, Time Machine finds its shares (Bonjour)', needsSMB: true },
+      { key: 'rsyncEnabled', inverted: false, label: 'rsync', help: 'another machine can back up the shares that allow rsync (read only)' },
+    ] as p (p.key)}
+      {@const on = p.inverted ? !settings[p.key] : settings[p.key]}
+      <div class="row" class:sub={p.needsSMB}>
+        <label class="check">
+          <input type="checkbox" checked={on} disabled={savingSettings || (p.needsSMB && settings.smbDisabled)}
+            onchange={(e) => toggle(p.key, p.inverted ? !e.currentTarget.checked : e.currentTarget.checked)} />
+          <span><strong>{p.label}</strong> <span class="muted small">· {p.help}</span></span>
+        </label>
+      </div>
+    {/each}
+    <p class="hint">Discovery announces the NAS itself; which shares are listed is chosen per share. Each share also chooses its services (SMB, rsync).</p>
     {#if loaded}<HomeFolders />{/if}
   </div>
 
   {#if editing}
-    <ShareForm rsyncEnabled={settings.rsyncEnabled} share={editing === 'new' ? null : editing} volumes={mountedVolumes} {users}
+    <ShareForm {settings} share={editing === 'new' ? null : editing} volumes={mountedVolumes} {users}
       onSave={save} onCancel={() => (editing = null)} />
   {/if}
 
@@ -119,7 +121,9 @@
         {#if !sh.available}<span class="badge bad">volume not mounted</span>{/if}
         {#if sh.timeMachine}<span class="badge neutral">Time Machine</span>{/if}
         {#if sh.recycleBin}<span class="badge neutral">Recycle bin</span>{/if}
-        {#if sh.hidden}<span class="badge neutral">Hidden</span>{/if}
+        {#if !sh.smbDisabled}<span class="badge info">SMB</span>{/if}
+        {#if sh.rsyncRead}<span class="badge info">rsync</span>{/if}
+        {#if !sh.smbDisabled && sh.hidden}<span class="badge neutral">Not listed</span>{/if}
         <span class="spacer"></span>
         <button class="secondary" onclick={() => (editing = sh)} disabled={!!editing}>Edit</button>
         <button class="secondary danger-text" onclick={() => askDelete(sh)}>Delete</button>
@@ -128,8 +132,10 @@
       <dl class="share-info">
         <dt>Access</dt><dd>{who(sh)}</dd>
         <dt>Folder</dt><dd class="mono">{sh.path}</dd>
-        <dt>Windows</dt><dd class="mono">\\{hostname}\{sh.name}</dd>
-        <dt>Mac / Linux</dt><dd class="mono">smb://{hostname}.local/{sh.name}</dd>
+        {#if !sh.smbDisabled}
+          <dt>Windows</dt><dd class="mono">\\{hostname}\{sh.name}</dd>
+          <dt>Mac / Linux</dt><dd class="mono">smb://{hostname}.local/{sh.name}</dd>
+        {/if}
         {#if sh.rsyncRead}<dt>rsync</dt><dd class="mono">rsync://{hostname}.local/{sh.name}/{settings.rsyncEnabled ? '' : ' (rsync is off)'}</dd>{/if}
         {#if sh.allowedHosts?.length}<dt>Only from</dt><dd class="mono">{sh.allowedHosts.join(', ')}</dd>{/if}
       </dl>

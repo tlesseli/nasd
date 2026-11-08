@@ -242,7 +242,7 @@ func TestRsyncAndHosts(t *testing.T) {
 		t.Fatal(err)
 	}
 	all = strings.Join(f.cmds, "\n")
-	for _, want := range []string{"systemctl disable --now smbd nmbd wsdd2", "systemctl enable --now rsync"} {
+	for _, want := range []string{"systemctl disable --now smbd nmbd", "systemctl disable --now wsdd2", "systemctl enable --now rsync"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("missing %q in:\n%s", want, all)
 		}
@@ -300,5 +300,43 @@ func TestHomesQuotaHidden(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(vol, "homes", "alice")); err != nil {
 		t.Error("disabling home shares must keep the folders")
+	}
+}
+
+func TestPerShareServicesAndDiscovery(t *testing.T) {
+	s, f, _ := newTestService(t)
+	ctx := context.Background()
+	s.CreateUser(ctx, "alice", "secret-password")
+	if err := s.CreateShare(ctx, ShareRequest{Name: "Sync", Volume: "media", Access: map[string]string{"alice": "ro"},
+		SMBDisabled: true, RsyncRead: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateShare(ctx, ShareRequest{Name: "TM", Volume: "media", SMBDisabled: true, TimeMachine: true}); err == nil {
+		t.Error("Time Machine without SMB must be refused")
+	}
+	smb, _ := os.ReadFile(s.SmbConf)
+	rs, _ := os.ReadFile(s.RsyncConf)
+	if strings.Contains(string(smb), "[Sync]") || !strings.Contains(string(rs), "[Sync]") {
+		t.Errorf("rsync-only share: smb.conf\n%s\nrsyncd.conf\n%s", smb, rs)
+	}
+
+	// Windows discovery off, macOS discovery on.
+	f.cmds = nil
+	if err := s.SetSettings(ctx, store.Settings{WSDDisabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	all := strings.Join(f.cmds, "\n")
+	if !strings.Contains(all, "systemctl enable --now smbd nmbd") || !strings.Contains(all, "systemctl disable --now wsdd2") {
+		t.Errorf("commands:\n%s", all)
+	}
+	if _, err := os.Stat(filepath.Join(s.AvahiDir, "nasd-smb.service")); err != nil {
+		t.Error("Bonjour announcement must stay when only Windows discovery is off")
+	}
+	s.SetSettings(ctx, store.Settings{BonjourDisabled: true})
+	if _, err := os.Stat(filepath.Join(s.AvahiDir, "nasd-smb.service")); err == nil {
+		t.Error("Bonjour announcement must be removed when macOS discovery is off")
+	}
+	if !strings.Contains(strings.Join(f.cmds, "\n"), "systemctl enable --now wsdd2") {
+		t.Error("Windows discovery must come back on")
 	}
 }
