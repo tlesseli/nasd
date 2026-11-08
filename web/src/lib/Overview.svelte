@@ -7,11 +7,14 @@
   let sys = $state(null)
   let disks = $state([])
   let volumes = $state([])
+  let services = $state([])
   let error = $state('')
 
   async function refresh() {
     try {
-      ;[sys, disks, volumes] = await Promise.all([api.get('/api/system'), api.get('/api/disks'), api.get('/api/volumes')])
+      ;[sys, disks, volumes, services] = await Promise.all([
+        api.get('/api/system'), api.get('/api/disks'), api.get('/api/volumes'), api.get('/api/services'),
+      ])
       error = ''
     } catch (e) {
       if (e.status === 401) onSessionLost()
@@ -57,6 +60,19 @@
       </div>
       <div class="stat"><span class="label">System</span><span class="value small">{sys.cpu}</span><span class="muted small">Linux {sys.kernel}</span></div>
     </section>
+  {/if}
+
+  {#if services.length}
+    <h2>Services</h2>
+    <div class="card list">
+      {#each services as svc (svc.unit)}
+        <div class="row">
+          <span class="badge {svc.active ? 'good' : 'bad'}">{svc.active ? 'Running' : 'Stopped'}</span>
+          <strong>{svc.label}</strong>
+          <span class="muted small mono">{svc.unit}</span>
+        </div>
+      {/each}
+    </div>
   {/if}
 
   <h2>Data disks <span class="muted">({dataDisks.length})</span></h2>

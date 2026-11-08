@@ -11,8 +11,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -22,10 +24,37 @@ type User struct {
 	Admin        bool   `json:"admin"`
 }
 
+// Share is a folder on a volume, exported over SMB.
+type Share struct {
+	Name        string `json:"name"`
+	Volume      string `json:"volume"`
+	Path        string `json:"path"`
+	Description string `json:"description"`
+	// Access maps a user name to "ro" (read only) or "rw" (read & write).
+	Access      map[string]string `json:"access"`
+	GuestRead   bool              `json:"guestRead"` // anyone on the LAN can read, no password
+	RecycleBin  bool              `json:"recycleBin"`
+	TimeMachine bool              `json:"timeMachine"`
+}
+
 // State is everything nasd persists. New fields get added here as the
-// project grows (shares, alert settings, ...).
+// project grows (alert settings, ...).
+//
+// Users with Admin=true log into the web UI (only "admin" for now); the
+// others are file-sharing accounts: they exist as Linux + Samba users and
+// can't log into the UI.
 type State struct {
-	Users []User `json:"users"`
+	Users  []User  `json:"users"`
+	Shares []Share `json:"shares"`
+}
+
+func (s *State) FindShare(name string) *Share {
+	for i := range s.Shares {
+		if strings.EqualFold(s.Shares[i].Name, name) { // SMB names are case-insensitive
+			return &s.Shares[i]
+		}
+	}
+	return nil
 }
 
 func (s *State) FindUser(name string) *User {
@@ -109,8 +138,15 @@ func (s *Store) save(st State) error {
 	return os.Rename(tmp.Name(), s.path)
 }
 
+// clone makes a deep copy: slices and maps would otherwise be shared, and
+// Update's "nothing changes on error" promise would silently break.
 func clone(st State) State {
 	out := st
 	out.Users = append([]User(nil), st.Users...)
+	out.Shares = make([]Share, len(st.Shares))
+	for i, sh := range st.Shares {
+		sh.Access = maps.Clone(sh.Access)
+		out.Shares[i] = sh
+	}
 	return out
 }

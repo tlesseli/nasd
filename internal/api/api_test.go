@@ -13,6 +13,7 @@ import (
 	"readynas/internal/auth"
 	"readynas/internal/disks"
 	"readynas/internal/jobs"
+	"readynas/internal/shares"
 	"readynas/internal/store"
 	"readynas/internal/volumes"
 )
@@ -34,6 +35,7 @@ func newTestServer(t *testing.T) http.Handler {
 		Disks:    disks.NewService(fake),
 		Volumes:  &volumes.Service{Sys: t.TempDir(), Fstab: "/nonexistent", MdadmConf: "/nonexistent", MountRoot: t.TempDir(), Run: fake},
 		Jobs:     jobs.NewManager(fake),
+		Shares:   &shares.Service{Store: st},
 		Sessions: auth.NewSessions(time.Minute),
 		Throttle: auth.NewThrottle(3, time.Minute),
 		UI:       fstest.MapFS{"index.html": {Data: []byte("<h1>ui</h1>")}},

@@ -147,3 +147,17 @@ table.members { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
   .members td:nth-child(2), .members th:nth-child(2) { display: none; }
 }
 .row-box { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; justify-content: space-between; }
+.notice { padding: 0.6rem 0.9rem; border-left: 3px solid var(--good); background: var(--surface); }
+.share-info { grid-template-columns: max-content 1fr; }
+.share-info dd { text-align: left; }
+.access td { padding: 0.35rem 0.5rem; }
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.segmented label { flex-direction: row; font-weight: 400; font-size: 0.85rem; padding: 0.35rem 0.7rem; cursor: pointer; }
+.segmented label + label { border-left: 1px solid var(--border); }
+.segmented label.on { background: var(--accent); color: #fff; }
+.segmented input { position: absolute; opacity: 0; pointer-events: none; }
+.segmented label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+@media (max-width: 600px) {
+  .access tr { display: flex; flex-direction: column; gap: 0.3rem; }
+  .access td.right { text-align: left; }
+}

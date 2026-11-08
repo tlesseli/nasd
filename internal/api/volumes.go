@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"readynas/internal/disks"
@@ -96,6 +97,10 @@ func (s *Server) deleteVolume(w http.ResponseWriter, r *http.Request) {
 	// Typing the name is the "are you really sure" step, enforced server side.
 	if req.Confirm != v.Name {
 		writeError(w, http.StatusBadRequest, "confirmation does not match the volume name")
+		return
+	}
+	if names := s.Shares.OnVolume(v.Name); len(names) > 0 {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("volume %s holds shares (%s): delete them first", v.Name, strings.Join(names, ", ")))
 		return
 	}
 	s.startJob(w, "Delete volume "+v.Name, time.Hour, func(ctx context.Context, j *jobs.Job) error {

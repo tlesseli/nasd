@@ -24,8 +24,8 @@
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && !busy && onCancel()} />
 
-<div class="backdrop">
-  <form class="card dialog" onsubmit={confirm} role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+<div class="backdrop" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+  <form class="card dialog" onsubmit={confirm}>
     <h2 id="dialog-title">{title}</h2>
     <p>{message}</p>
     {#if expected}

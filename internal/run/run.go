@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 )
@@ -19,7 +20,21 @@ type Func func(ctx context.Context, name string, args ...string) ([]byte, error)
 // never through a shell, so a volume name like "x; rm -rf /" can't inject
 // commands (and we validate names anyway).
 func Exec(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return execute(ctx, nil, name, args...)
+}
+
+// InputFunc is a Func that also writes data to the command's stdin.
+type InputFunc func(ctx context.Context, stdin string, name string, args ...string) ([]byte, error)
+
+// ExecInput is Exec with stdin. Secrets (passwords) go through stdin, never
+// through arguments: every user on the machine can read arguments with `ps`.
+func ExecInput(ctx context.Context, stdin string, name string, args ...string) ([]byte, error) {
+	return execute(ctx, strings.NewReader(stdin), name, args...)
+}
+
+func execute(ctx context.Context, stdin io.Reader, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Stdin = stdin
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()

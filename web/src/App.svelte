@@ -4,6 +4,8 @@
   import Login from './lib/Login.svelte'
   import Overview from './lib/Overview.svelte'
   import Volumes from './lib/Volumes.svelte'
+  import Shares from './lib/Shares.svelte'
+  import Users from './lib/Users.svelte'
 
   // Which screen to show: 'loading' | 'setup' | 'login' | 'app'
   let screen = $state('loading')
@@ -11,11 +13,13 @@
   let hostname = $state('NAS')
   let bootError = $state('')
 
-  // Minimal hash router: #/ and #/volumes. No library needed for two pages.
+  // Minimal hash router (#/, #/volumes, ...). No library needed for a few pages.
   let route = $state(location.hash.slice(1) || '/')
   const pages = [
     { path: '/', label: 'Overview' },
     { path: '/volumes', label: 'Volumes' },
+    { path: '/shares', label: 'Shares' },
+    { path: '/users', label: 'Users' },
   ]
 
   onMount(async () => {
@@ -64,6 +68,10 @@
 
   {#if route === '/volumes'}
     <Volumes {onSessionLost} />
+  {:else if route === '/shares'}
+    <Shares {hostname} {onSessionLost} />
+  {:else if route === '/users'}
+    <Users {onSessionLost} />
   {:else}
     <Overview {onSessionLost} />
   {/if}

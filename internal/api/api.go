@@ -29,6 +29,7 @@ import (
 	"readynas/internal/auth"
 	"readynas/internal/disks"
 	"readynas/internal/jobs"
+	"readynas/internal/shares"
 	"readynas/internal/store"
 	"readynas/internal/system"
 	"readynas/internal/volumes"
@@ -45,6 +46,7 @@ type Server struct {
 	Disks    *disks.Service
 	Volumes  *volumes.Service
 	Jobs     *jobs.Manager
+	Shares   *shares.Service
 	Sessions *auth.Sessions
 	Throttle *auth.Throttle
 	UI       fs.FS // built Svelte app (web/dist)
@@ -62,6 +64,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/system", s.requireLogin(s.system))
 	mux.Handle("GET /api/disks", s.requireLogin(s.disks))
 	s.volumeRoutes(mux)
+	s.shareRoutes(mux)
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "unknown endpoint")

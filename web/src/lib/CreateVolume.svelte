@@ -1,7 +1,11 @@
 <script>
   import { formatBytes } from '../api.js'
 
+  import { untrack } from 'svelte'
+
   let { freeDisks, onCreate, onCancel } = $props()
+  // Defaults computed once, when the form opens.
+  const initialDisks = untrack(() => freeDisks)
 
   // Mirrors volumes.Levels in Go. The server re-checks everything anyway.
   const levels = [
@@ -18,9 +22,9 @@
   ]
 
   let name = $state('')
-  let level = $state(freeDisks.length >= 3 ? 'raid5' : 'raid1')
+  let level = $state(initialDisks.length >= 3 ? 'raid5' : 'raid1')
   let filesystem = $state('ext4')
-  let selected = $state(freeDisks.map((d) => d.name))
+  let selected = $state(initialDisks.map((d) => d.name))
   let understood = $state(false)
   let busy = $state(false)
   let error = $state('')

@@ -21,6 +21,7 @@ import (
 	"readynas/internal/disks"
 	"readynas/internal/jobs"
 	"readynas/internal/run"
+	"readynas/internal/shares"
 	"readynas/internal/store"
 	"readynas/internal/tlsutil"
 	"readynas/internal/volumes"
@@ -48,10 +49,32 @@ func main() {
 		log.Fatalf("tls: %v", err)
 	}
 
+	vols := volumes.NewService(run.Exec)
+	// Shares need to know where volumes are mounted.
+	mounted := func(ctx context.Context) (map[string]string, error) {
+		list, err := vols.List(ctx)
+		if err != nil {
+			return nil, err
+		}
+		m := map[string]string{}
+		for _, v := range list {
+			if v.Mountpoint != "" {
+				m[v.Name] = v.Mountpoint
+			}
+		}
+		return m, nil
+	}
+	shr := shares.NewService(st, mounted)
+	// Make smb.conf match state.json (e.g. after an update or a manual edit).
+	if err := shr.Apply(context.Background()); err != nil {
+		log.Printf("warning: applying Samba config: %v", err)
+	}
+
 	srv := &api.Server{
 		Store:    st,
 		Disks:    disks.NewService(run.Exec),
-		Volumes:  volumes.NewService(run.Exec),
+		Volumes:  vols,
+		Shares:   shr,
 		Jobs:     jobs.NewManager(run.Exec),
 		Sessions: auth.NewSessions(30 * time.Minute),
 		Throttle: auth.NewThrottle(5, 10*time.Minute),
