@@ -8,3 +8,9 @@ web/dist/*
 !web/dist/.gitkeep
 vm/console.log
 vm/monitor.sock
+image/*.qcow2
+image/*.raw
+image/*.iso
+image/id_ed25519*
+image/build/
+image/credentials.txt

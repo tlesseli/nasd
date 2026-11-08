@@ -3,7 +3,13 @@
 export PATH := $(HOME)/.local/go/bin:$(PATH)
 
 BIN := bin/nasd
+# Target: the dev VM by default; the real NAS with `make deploy NAS=nas@nas.local`
+# (key created by image/build.sh).
+ifdef NAS
+SSH := ssh -i image/id_ed25519 -o IdentitiesOnly=yes $(NAS)
+else
 SSH := vm/ssh.sh
+endif
 
 .PHONY: all ui build test deploy logs vm-reset
 
@@ -27,7 +33,7 @@ deploy: build
 	cat $(BIN) | $(SSH) 'sudo tee /usr/local/bin/nasd.new >/dev/null && sudo chmod 755 /usr/local/bin/nasd.new && sudo mv /usr/local/bin/nasd.new /usr/local/bin/nasd'
 	cat deploy/nasd.service | $(SSH) 'sudo tee /etc/systemd/system/nasd.service >/dev/null'
 	$(SSH) 'sudo systemctl daemon-reload && sudo systemctl enable --quiet nasd && sudo systemctl restart nasd && systemctl is-active nasd'
-	@echo "UI: https://localhost:8443"
+	@echo "UI: https://$(if $(NAS),$(lastword $(subst @, ,$(NAS))),localhost):8443"
 
 logs:
 	$(SSH) 'journalctl -u nasd -f -n 50'
