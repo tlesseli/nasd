@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	"readynas/internal/disks"
 	"readynas/internal/hardware"
 	"readynas/internal/jobs"
+	"readynas/internal/lcd"
 	"readynas/internal/metrics"
 	"readynas/internal/monitor"
 	"readynas/internal/power"
@@ -43,7 +45,13 @@ func main() {
 	dataDir := flag.String("data", "/var/lib/nasd", "directory for state and TLS certificate")
 	hwmon := flag.String("hwmon", "/sys", "root of the sensors tree (a fake one for tests)")
 	fansFull := flag.Bool("fans-full", false, "set every manually controlled fan to full speed and exit (run by systemd after nasd stops)")
+	lcdMessage := flag.String("lcd-message", "", `show "line 1|line 2" on the front display and exit (run by systemd around nasd)`)
 	flag.Parse()
+	if *lcdMessage != "" {
+		l1, l2, _ := strings.Cut(*lcdMessage, "|")
+		lcd.ShowOnce(lcd.Detect(), l1, l2)
+		return
+	}
 	if *fansFull {
 		hardware.AllFansFull(*hwmon)
 		return
@@ -117,6 +125,12 @@ func main() {
 	sc.ResumePending() // a network change not confirmed before a restart still rolls back
 	afterBootCheck(st, vols, al)
 
+	loc := hardware.NewLocator()
+	display := lcd.New(lcdCollector(st, vols, dk, mon, pw, btn, loc, jm, *hwmon), lcd.Detect())
+	display.AlwaysOn = func() bool { return st.Read().LCD.AlwaysOn }
+	btn.OnPress = display.Wake
+	log.Printf("front display: %s", display.Out.Name())
+
 	ms := metrics.New(filepath.Join(*dataDir, "metrics.json"))
 	ms.Sys = *hwmon
 	ms.Storage = func(ctx context.Context) map[string]int64 {
@@ -141,7 +155,8 @@ func main() {
 		Sys:      *hwmon,
 		Button:   btn,
 		Fan:      fan,
-		Locator:  hardware.NewLocator(),
+		Locator:  loc,
+		LCD:      display,
 		Metrics:  ms,
 		Version:  version,
 		Volumes:  vols,
@@ -169,6 +184,8 @@ func main() {
 	go btn.Run(ctx)
 	go fan.Run(ctx)
 	go ms.Run(ctx)
+	go display.Run(ctx)
+	display.Wake() // routine screen lit for 2 min after start
 	go shr.RunSizes(ctx)
 	go func() {
 		// state.json is the source of truth for quotas: make the system agree
@@ -195,6 +212,7 @@ func main() {
 	if err := httpSrv.ListenAndServeTLS("", ""); !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
+	display.SetPhase("Shutting down", "nasd stopped")
 	ms.Save() // synchronously: the process exits right after, the sampler goroutine may not get to it
 }
 

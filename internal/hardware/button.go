@@ -49,7 +49,12 @@ type Button struct {
 	Input   string // /dev/input
 	SysIn   string // /sys/class/input
 
+	// OnPress is called when the configured button is pressed (wakes the display).
+	OnPress func()
+
 	mu       sync.Mutex
+	cur      int // job being run (1-based) while running
+	total    int
 	open     map[string]bool // event devices being read
 	learners []chan KeyPress
 	running  bool
@@ -127,6 +132,9 @@ func (b *Button) HandlePress(k KeyPress) {
 	b.mu.Unlock()
 	cfg := b.Store.Read().Button
 	if cfg.Device != "" && k.Device == cfg.Device && k.Code == cfg.Code {
+		if b.OnPress != nil {
+			b.OnPress()
+		}
 		b.Press("button")
 	}
 }
@@ -174,7 +182,10 @@ func (b *Button) Press(trigger string) error {
 
 func (b *Button) runAll(ids []int) []string {
 	var results []string
-	for _, id := range ids {
+	for i, id := range ids {
+		b.mu.Lock()
+		b.cur, b.total = i+1, len(ids)
+		b.mu.Unlock()
 		var snap jobs.Snapshot
 		var err error
 		// Wait for the NAS to be free (another job may be running), up to an hour.
@@ -197,6 +208,13 @@ func (b *Button) runAll(ids []int) []string {
 		}
 	}
 	return results
+}
+
+// Progress returns (running, current job number, number of jobs).
+func (b *Button) Progress() (bool, int, int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.running, b.cur, b.total
 }
 
 // Running reports whether the button's jobs are in progress.

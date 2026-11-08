@@ -218,6 +218,11 @@ type ButtonSettings struct {
 	Jobs   []int  `json:"jobs"`   // backup jobs to run, in order
 }
 
+// LCDSettings: the front display.
+type LCDSettings struct {
+	AlwaysOn bool `json:"alwaysOn"` // backlight always on (else 2 min after a button press)
+}
+
 // FanSettings: who drives the fan.
 type FanSettings struct {
 	Mode       string `json:"mode"`       // "" = the motherboard (default), "curve" = nasd, "full" = always 100%
@@ -273,6 +278,7 @@ type State struct {
 	NetworkPending *NetworkChange         `json:"networkPending,omitempty"`
 	Button         ButtonSettings         `json:"button"`
 	Fan            FanSettings            `json:"fan"`
+	LCD            LCDSettings            `json:"lcd"`
 }
 
 func (s *State) FindBackup(id int) *BackupJob {

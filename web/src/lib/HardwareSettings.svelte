@@ -8,6 +8,7 @@
   let fan = $state(null)
   let learning = $state(false)
   let msg = $state(null)
+  let lcd = $state(null)
 
   async function load(keepForms = false) {
     hw = await api.get('/api/hardware')
@@ -19,10 +20,15 @@
       if (!fan.pwm && hw.outputs.length) fan.pwm = hw.outputs[0].id
     }
   }
+  async function loadLCD() {
+    lcd = await api.get('/api/lcd').catch(() => lcd)
+  }
   onMount(() => {
     load()
+    loadLCD()
     const t = setInterval(() => load(true), 5000) // live fan status
-    return () => clearInterval(t)
+    const d = setInterval(loadLCD, 1000) // live display preview
+    return () => (clearInterval(t), clearInterval(d))
   })
 
   async function learn() {
@@ -61,10 +67,32 @@
   }
 
   const jobName = (id) => backups.find((b) => b.id === id)?.name ?? `job ${id}`
+  const tierText = { phase: 'startup / shutdown', critical: 'critical problem (blinking)', network: 'network change to confirm',
+    ups: 'power cut', feedback: 'button / locate', operation: 'operation in progress', warning: 'warning', routine: 'routine information' }
   const enableText = { 0: 'full speed', 1: 'manual (nasd)', 2: 'automatic (motherboard)' }
 </script>
 
 {#if msg}<p class={msg.ok ? 'notice' : 'error'}>{msg.text}</p>{/if}
+
+{#if lcd}
+  <div class="card create">
+    <div class="card-head"><h2>Front display</h2><span class="spacer"></span><span class="muted small">{lcd.driver}</span></div>
+    <div class="lcd-wrap">
+      <div class="lcd" class:off={!lcd.frame.backlight} role="img" aria-label="Front display: {lcd.frame.line1.trim()} / {lcd.frame.line2.trim()}">
+        <span>{lcd.frame.line1}</span><span>{lcd.frame.line2}</span>
+      </div>
+      <div class="small muted">Showing: <strong>{tierText[lcd.frame.tier] ?? lcd.frame.tier}</strong><br />
+        Problems and operations take over the display; otherwise it rotates through name and address, capacity, temperatures and uptime every 5 s.</div>
+    </div>
+    <div class="add">
+      <label class="check"><input type="checkbox" checked={lcd.settings.alwaysOn}
+        onchange={(e) => post('/api/lcd', { alwaysOn: e.currentTarget.checked }, 'Display setting saved.').then(loadLCD)} />
+        <span>Backlight always on <span class="muted small">· otherwise it lights for 2 minutes after the Backup button is pressed, and whenever something needs attention</span></span></label>
+      <span class="spacer"></span>
+      <button class="secondary" onclick={() => post('/api/lcd/wake', {}, 'Display lit for 2 minutes.').then(loadLCD)}>Light up</button>
+    </div>
+  </div>
+{/if}
 
 {#if button}
   <div class="card create">
@@ -149,3 +177,12 @@
     {/if}
   </div>
 {/if}
+
+<style>
+  .lcd-wrap { display: flex; gap: 1.25rem; align-items: center; flex-wrap: wrap; }
+  /* A 2x16 blue character LCD, as on the ReadyNAS front. */
+  .lcd { display: flex; flex-direction: column; padding: 0.7rem 0.9rem; border-radius: 6px; border: 3px solid #0b0d12;
+    background: #1d3fd8; color: #e8f0ff; font-family: ui-monospace, 'DejaVu Sans Mono', monospace; font-size: 1.15rem;
+    letter-spacing: 0.08em; line-height: 1.35; white-space: pre; box-shadow: inset 0 0 18px rgb(0 0 0 / 0.35); }
+  .lcd.off { background: #101a44; color: #5866a3; }
+</style>

@@ -32,6 +32,7 @@ import (
 	"readynas/internal/disks"
 	"readynas/internal/hardware"
 	"readynas/internal/jobs"
+	"readynas/internal/lcd"
 	"readynas/internal/metrics"
 	"readynas/internal/monitor"
 	"readynas/internal/power"
@@ -63,6 +64,7 @@ type Server struct {
 	Button   *hardware.Button
 	Fan      *hardware.Fan
 	Locator  *hardware.Locator
+	LCD      *lcd.Engine
 	Metrics  *metrics.Sampler
 	Version  string
 	failed   failedLogins
@@ -92,6 +94,9 @@ func (s *Server) Handler() http.Handler {
 	s.users2Routes(mux)
 	s.hardwareRoutes(mux)
 	s.overviewRoutes(mux)
+	mux.Handle("GET /api/lcd", s.requireLogin(s.getLCD))
+	mux.Handle("POST /api/lcd", s.requireLogin(s.setLCD))
+	mux.Handle("POST /api/lcd/wake", s.requireLogin(s.wakeLCD))
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "unknown endpoint")
@@ -347,4 +352,23 @@ func clientIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// ---- front display ----
+
+func (s *Server) getLCD(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"frame": s.LCD.Current(), "driver": s.LCD.Out.Name(),
+		"settings": s.Store.Read().LCD})
+}
+
+func (s *Server) setLCD(w http.ResponseWriter, r *http.Request) {
+	var req store.LCDSettings
+	if readJSON(w, r, &req) {
+		result(w, s.Store.Update(func(st *store.State) error { st.LCD = req; return nil }))
+	}
+}
+
+func (s *Server) wakeLCD(w http.ResponseWriter, r *http.Request) {
+	s.LCD.Wake()
+	w.WriteHeader(http.StatusNoContent)
 }

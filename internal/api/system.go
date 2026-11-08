@@ -118,9 +118,14 @@ func (s *Server) systemPower(w http.ResponseWriter, r *http.Request) {
 		Action string `json:"action"`
 		Force  bool   `json:"force"`
 	}
-	if readJSON(w, r, &req) {
-		result(w, s.System.Power(r.Context(), req.Action, req.Force))
+	if !readJSON(w, r, &req) {
+		return
 	}
+	err := s.System.Power(r.Context(), req.Action, req.Force)
+	if err == nil && s.LCD != nil {
+		s.LCD.SetPhase(map[string]string{"reboot": "Restarting...", "poweroff": "Shutting down"}[req.Action], "please wait")
+	}
+	result(w, err)
 }
 
 func (s *Server) getUpdates(w http.ResponseWriter, r *http.Request) {

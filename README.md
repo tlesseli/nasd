@@ -45,7 +45,8 @@ UI: https://localhost:8443 (accept the self-signed certificate warning once).
        network (static IP, bonding, MTU, with rollback), reboot/shutdown, OS updates
 5d. [x] Users & USB: private home share per user, disk quotas, hidden shares, copy USB content on connection
 6a. [x] Hardware, software side (tested in the VM): Backup button (learned input event, jobs in order),
-       locate a disk (activity-LED blinking + ledctl), fan control (disk-temperature curve, safety rules)
+       locate a disk (activity-LED blinking + ledctl), fan control (disk-temperature curve, safety rules),
+       front display 2x16 (priority tiers, rotation, backlight; charlcd output, simulated preview)
 6. [ ] Real ReadyNAS: install Debian, load the sensor driver, learn the Backup button, check LEDs,
        bonding, Wake-on-LAN, power-on alarm
 
