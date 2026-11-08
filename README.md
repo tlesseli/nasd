@@ -33,7 +33,7 @@ UI: https://localhost:8443 (accept the self-signed certificate warning once).
 ## Roadmap (V1)
 1. [x] Dev VM with 4 disks
 2. [x] nasd skeleton: HTTPS, first-run admin setup, login, disks + SMART, dashboard
-3. [ ] Volumes: create/delete RAID 0/1/5/6/10 (mdadm), format, mount, rebuild progress, replace disk
+3. [x] Volumes: create/delete RAID 0/1/5/6/10 (mdadm), format, mount, rebuild progress, replace disk
 4. [ ] Shares + users (Samba), discovery (wsdd2, Avahi)
 5. [ ] Alerts (email / ntfy): degraded RAID, SMART errors, volume full
 6. [ ] Install on the real ReadyNAS

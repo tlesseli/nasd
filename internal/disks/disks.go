@@ -10,24 +10,26 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"readynas/internal/run"
 )
 
 type Disk struct {
-	Name       string  `json:"name"` // sda
-	Path       string  `json:"path"` // /dev/sda
-	Model      string  `json:"model"`
-	Serial     string  `json:"serial"`
-	SizeBytes  int64   `json:"sizeBytes"`
-	Transport  string  `json:"transport"` // sata, usb, nvme, virtio...
-	Rotational bool    `json:"rotational"`
-	Role       string  `json:"role"`  // "system" (holds the OS) or "data"
-	Usage      string  `json:"usage"` // what's on it: "", "raid member", "ext4"...
-	Health     *Health `json:"health"`
+	Name       string   `json:"name"` // sda
+	Path       string   `json:"path"` // /dev/sda
+	Model      string   `json:"model"`
+	Serial     string   `json:"serial"`
+	SizeBytes  int64    `json:"sizeBytes"`
+	Transport  string   `json:"transport"` // sata, usb, nvme, virtio...
+	Rotational bool     `json:"rotational"`
+	Role       string   `json:"role"`       // "system" (holds the OS) or "data"
+	Usage      string   `json:"usage"`      // what's on it: "", "raid member", "ext4"...
+	Partitions []string `json:"partitions"` // /dev/sda1...
+	Health     *Health  `json:"health"`
 }
 
 type Health struct {
@@ -43,11 +45,7 @@ type Health struct {
 
 // Runner executes a command and returns its stdout. Tests replace it with
 // a fake that returns canned output, so they run without real disks.
-type Runner func(ctx context.Context, name string, args ...string) ([]byte, error)
-
-func ExecRunner(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, name, args...).Output()
-}
+type Runner = run.Func
 
 type Service struct {
 	run Runner
@@ -120,6 +118,11 @@ func parseLsblk(data []byte) ([]Disk, error) {
 			Rotational: bool(d.Rota),
 			Role:       "data",
 			Usage:      usage(d),
+		}
+		for _, c := range d.Children {
+			if c.Type == "part" {
+				disk.Partitions = append(disk.Partitions, c.Path)
+			}
 		}
 		if holdsSystem(d) {
 			disk.Role = "system"

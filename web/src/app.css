@@ -75,3 +75,74 @@ dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
 .badge.warn { color: var(--warn); }
 .badge.bad { color: var(--bad); }
 .badge.neutral { color: var(--muted); }
+
+/* ---- milestone 3: navigation, volumes, dialogs ---- */
+:root { --info: #2563eb; --danger: #b91c1c; }
+@media (prefers-color-scheme: dark) { :root { --info: #60a5fa; --danger: #f87171; } }
+
+nav { display: flex; gap: 0.25rem; margin-left: 1rem; }
+nav a { color: var(--muted); text-decoration: none; padding: 0.35rem 0.7rem; border-radius: 6px; font-weight: 500; }
+nav a:hover { color: var(--text); }
+nav a.active { color: var(--text); background: var(--bg); }
+
+.page-head { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+.page-head h1 { margin: 0; }
+
+button.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+button.secondary:hover:not(:disabled) { background: var(--bg); }
+button.danger { background: var(--danger); color: #fff; }
+.danger-text { color: var(--danger) !important; }
+.badge.info { color: var(--info); }
+
+select { font: inherit; padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); }
+fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+legend { font-size: 0.9rem; font-weight: 500; margin-bottom: 0.4rem; }
+.hint { font-weight: 400; font-size: 0.8rem; color: var(--muted); }
+label.check { flex-direction: row; align-items: flex-start; gap: 0.6rem; font-weight: 400; }
+label.check input { margin-top: 0.2rem; }
+.actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+
+.create { display: flex; flex-direction: column; gap: 1.1rem; margin-bottom: 1.5rem; }
+.create h2 { margin: 0; }
+.levels { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.5rem; }
+.level { flex-direction: row; align-items: flex-start; gap: 0.6rem; font-weight: 400; padding: 0.7rem 0.8rem; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
+.level:has(input:checked) { border-color: var(--accent); }
+.level.disabled { opacity: 0.5; }
+.level input { margin-top: 0.25rem; }
+.summary { padding: 0.75rem 0.9rem; background: var(--bg); border-radius: 6px; }
+.warning { padding: 0.75rem 0.9rem; border: 1px solid var(--warn); border-radius: 6px; }
+
+.volume { margin-bottom: 1rem; display: flex; flex-direction: column; gap: 1rem; }
+.volume-head { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.volume-head h2 { margin: 0; }
+.usage, .sync { display: flex; flex-direction: column; gap: 0.4rem; }
+.meter.big { height: 8px; border-radius: 4px; }
+.meter span.full { background: var(--bad); }
+.warn-box { margin: 0; padding: 0.7rem 0.9rem; border-left: 3px solid var(--warn); background: var(--bg); }
+
+table.members { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.members th { text-align: left; font-weight: 500; color: var(--muted); font-size: 0.8rem; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border); }
+.members td { padding: 0.5rem; border-bottom: 1px solid var(--border); }
+.members tr.missing td { color: var(--bad); font-style: italic; }
+.right { text-align: right; }
+.add { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+
+.empty { text-align: center; padding: 2.5rem 1rem; }
+.empty p { margin: 0.3rem 0; }
+.list .row { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0; flex-wrap: wrap; }
+.list .row + .row { border-top: 1px solid var(--border); }
+
+.job { margin-bottom: 1.5rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.job-head { display: flex; align-items: center; gap: 0.75rem; }
+.job pre { margin: 0; max-height: 260px; overflow: auto; background: var(--bg); padding: 0.75rem; border-radius: 6px; font-size: 0.8rem; line-height: 1.45; white-space: pre-wrap; word-break: break-all; }
+
+.backdrop { position: fixed; inset: 0; background: rgb(0 0 0 / 0.45); display: grid; place-items: center; padding: 16px; z-index: 10; }
+.dialog { width: 100%; max-width: 440px; display: flex; flex-direction: column; gap: 1rem; }
+.dialog h2 { margin: 0; }
+.dialog p { margin: 0; }
+
+@media (max-width: 600px) {
+  nav { margin-left: 0; }
+  .brand { display: none; }
+  .members td:nth-child(2), .members th:nth-child(2) { display: none; }
+}

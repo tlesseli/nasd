@@ -19,8 +19,11 @@ import (
 	"readynas/internal/api"
 	"readynas/internal/auth"
 	"readynas/internal/disks"
+	"readynas/internal/jobs"
+	"readynas/internal/run"
 	"readynas/internal/store"
 	"readynas/internal/tlsutil"
+	"readynas/internal/volumes"
 	"readynas/web"
 )
 
@@ -47,7 +50,9 @@ func main() {
 
 	srv := &api.Server{
 		Store:    st,
-		Disks:    disks.NewService(disks.ExecRunner),
+		Disks:    disks.NewService(run.Exec),
+		Volumes:  volumes.NewService(run.Exec),
+		Jobs:     jobs.NewManager(run.Exec),
 		Sessions: auth.NewSessions(30 * time.Minute),
 		Throttle: auth.NewThrottle(5, 10*time.Minute),
 		UI:       web.Dist(),

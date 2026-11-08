@@ -2,15 +2,16 @@
   import { onMount } from 'svelte'
   import { api, formatBytes, formatDuration } from '../api.js'
 
-  let { user, logout, onSessionLost } = $props()
+  let { onSessionLost } = $props()
 
   let sys = $state(null)
   let disks = $state([])
+  let volumes = $state([])
   let error = $state('')
 
   async function refresh() {
     try {
-      ;[sys, disks] = await Promise.all([api.get('/api/system'), api.get('/api/disks')])
+      ;[sys, disks, volumes] = await Promise.all([api.get('/api/system'), api.get('/api/disks'), api.get('/api/volumes')])
       error = ''
     } catch (e) {
       if (e.status === 401) onSessionLost()
@@ -35,16 +36,11 @@
   }
 
   let memUsedPct = $derived(sys ? Math.round(100 * (1 - sys.memAvailableBytes / sys.memTotalBytes)) : 0)
+  // disk name -> volume name, to show which volume each disk belongs to
+  let volumeOf = $derived(Object.fromEntries(volumes.flatMap((v) => v.members.map((m) => [m.disk, v.name]))))
   let dataDisks = $derived(disks.filter((d) => d.role === 'data'))
   let systemDisks = $derived(disks.filter((d) => d.role === 'system'))
 </script>
-
-<header class="topbar">
-  <span class="brand">{sys?.hostname ?? 'NAS'}</span>
-  <span class="spacer"></span>
-  <span class="muted">{user}</span>
-  <button class="link" onclick={logout}>Sign out</button>
-</header>
 
 <main class="page">
   {#if error}<p class="error">{error}</p>{/if}
@@ -76,7 +72,7 @@
         <dl>
           <dt>Model</dt><dd>{d.model || '—'}</dd>
           <dt>Serial</dt><dd class="mono">{d.serial || '—'}</dd>
-          <dt>In use as</dt><dd>{d.usage || 'free'}</dd>
+          <dt>In use as</dt><dd>{volumeOf[d.name] ? `volume ${volumeOf[d.name]}` : d.usage || 'free'}</dd>
           {#if d.health?.supported}
             <dt>Temperature</dt><dd>{d.health.temperatureC ? `${d.health.temperatureC} °C` : '—'}</dd>
             <dt>Power-on</dt><dd>{d.health.powerOnHours.toLocaleString()} h</dd>

@@ -10,6 +10,9 @@
 //	GET  /api/me       -> {"username"}
 //	GET  /api/system   -> system.Info
 //	GET  /api/disks    -> []disks.Disk
+//
+// Volumes (milestone 3, see volumes.go). Disk operations run as background
+// jobs: they answer 202 with a job, which the UI polls on /api/jobs/{id}.
 package api
 
 import (
@@ -25,8 +28,10 @@ import (
 
 	"readynas/internal/auth"
 	"readynas/internal/disks"
+	"readynas/internal/jobs"
 	"readynas/internal/store"
 	"readynas/internal/system"
+	"readynas/internal/volumes"
 )
 
 const (
@@ -38,6 +43,8 @@ const (
 type Server struct {
 	Store    *store.Store
 	Disks    *disks.Service
+	Volumes  *volumes.Service
+	Jobs     *jobs.Manager
 	Sessions *auth.Sessions
 	Throttle *auth.Throttle
 	UI       fs.FS // built Svelte app (web/dist)
@@ -54,6 +61,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/me", s.requireLogin(s.me))
 	mux.Handle("GET /api/system", s.requireLogin(s.system))
 	mux.Handle("GET /api/disks", s.requireLogin(s.disks))
+	s.volumeRoutes(mux)
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "unknown endpoint")
