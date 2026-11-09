@@ -33,6 +33,9 @@ func (s *Server) ResetAdminPassword() (string, error) {
 		return "", err
 	}
 	s.Sessions.DeleteUser(adminUser)
+	if s.Throttle != nil {
+		s.Throttle.ResetAll()
+	}
 	log.Printf("admin password reset with the Backup button")
 	if s.Alerts != nil {
 		s.Alerts.Notify("admin_reset", "The admin password was reset at the NAS",

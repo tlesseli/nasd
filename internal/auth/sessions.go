@@ -107,6 +107,14 @@ func (t *Throttle) Reset(ip string) {
 	delete(t.fails, ip)
 }
 
+// ResetAll forgets every failed attempt (the admin password was just reset
+// at the NAS: whoever did it must be able to sign in right away).
+func (t *Throttle) ResetAll() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	clear(t.fails)
+}
+
 func (t *Throttle) recent(ip string) []time.Time {
 	cutoff := time.Now().Add(-t.window)
 	var out []time.Time
