@@ -187,6 +187,13 @@
 
   const sel = $derived(volumes.find((v) => v.name === selected))
   const tolerates = { raid0: 0, raid1: (n) => n - 1, raid5: 1, raid6: 2, raid10: 1 }
+  // The share of each disk the array uses: a mirror keeps everything on every
+  // disk; striped levels spread the size over their data disks.
+  const perDisk = (v) => {
+    const n = Math.max(1, v.raidDisks)
+    const data = { raid1: 1, raid10: n / 2, raid5: n - 1, raid6: n - 2 }[v.level] ?? n
+    return v.sizeBytes / Math.max(1, data)
+  }
   const survives = (v) => {
     const t = tolerates[v.level]
     const n = typeof t === 'function' ? t(v.raidDisks) : t ?? 0
@@ -246,10 +253,15 @@
               <span class="spacer"></span>
               <span class="badge {statusClass[v.status] ?? 'neutral'}">{v.status[0].toUpperCase() + v.status.slice(1)}</span>
             </div>
-            <div class="muted small">{levelLabel(v.level)} · {v.raidDisks} × {formatBytes(v.sizeBytes / Math.max(1, v.raidDisks - (v.level === 'raid5' ? 1 : v.level === 'raid6' ? 2 : 0)))} · {v.filesystem || 'no filesystem'}</div>
+            <div class="muted small">{levelLabel(v.level)} · {v.raidDisks} × {formatBytes(perDisk(v))} · {v.filesystem || 'no filesystem'}</div>
             <div class="pool-usage">
-              <span class="big">{formatBytes(v.usedBytes)} <span class="muted small">used</span></span>
-              <span class="muted small">{formatBytes(v.availBytes)} free · {formatBytes(v.totalBytes || v.sizeBytes)}</span>
+              {#if v.mountpoint}
+                <span class="big">{formatBytes(v.usedBytes)} <span class="muted small">used</span></span>
+                <span class="muted small">{formatBytes(v.availBytes)} free · {formatBytes(v.totalBytes || v.sizeBytes)}</span>
+              {:else}
+                <span class="big">{formatBytes(v.sizeBytes)}</span>
+                <span class="muted small">not mounted</span>
+              {/if}
             </div>
             <div class="segbar" aria-label="{Math.round(pct)}% used">
               {#each Array(SEGMENTS) as _, i}<span class:on={i < Math.round((pct / 100) * SEGMENTS)} class:warn={pct >= 90}></span>{/each}
