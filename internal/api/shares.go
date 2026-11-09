@@ -32,6 +32,7 @@ func (s *Server) shareRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/users/{name}/delete", s.requireLogin(s.deleteUser))
 	mux.Handle("GET /api/shares", s.requireLogin(s.listShares))
 	mux.Handle("POST /api/shares", s.requireLogin(s.createShare))
+	mux.Handle("GET /api/shares/unshared", s.requireLogin(s.unsharedFolders))
 	mux.Handle("POST /api/shares/{name}", s.requireLogin(s.updateShare))
 	mux.Handle("POST /api/shares/{name}/delete", s.requireLogin(s.deleteShare))
 	mux.Handle("GET /api/services", s.requireLogin(s.services))
@@ -82,6 +83,22 @@ func (s *Server) listShares(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, list)
+}
+
+// unsharedFolders: folders already on the volumes that no share uses.
+func (s *Server) unsharedFolders(w http.ResponseWriter, r *http.Request) {
+	vols, err := s.Volumes.List(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	mounts := map[string]string{}
+	for _, v := range vols {
+		if v.Managed && v.Mountpoint != "" {
+			mounts[v.Name] = v.Mountpoint
+		}
+	}
+	writeJSON(w, http.StatusOK, s.Shares.Unshared(mounts))
 }
 
 func (s *Server) createShare(w http.ResponseWriter, r *http.Request) {

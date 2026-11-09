@@ -3,14 +3,15 @@
 
   // Create or edit a share. `share` is null for a new one.
   // bare: rendered inside another card (the Shares side panel).
-  let { share: shareProp = null, volumes: volumesProp, users: usersProp, settings = {}, bare = false, onSave, onCancel, onDelete } = $props()
+  let { share: shareProp = null, preset = null, volumes: volumesProp, users: usersProp, settings = {}, bare = false, onSave, onCancel, onDelete } = $props()
 
   // The form works on a snapshot taken when it opens: the page refreshing its
   // lists in the background must not reset what you're typing.
   const { share, volumes, users } = untrack(() => ({ share: shareProp, volumes: volumesProp, users: usersProp }))
   const editing = !!share
-  let name = $state(share?.name ?? '')
-  let volume = $state(share?.volume ?? volumes[0]?.name ?? '')
+  // preset: a new share for a folder that already exists ({name, volume}).
+  let name = $state(share?.name ?? untrack(() => preset?.name) ?? '')
+  let volume = $state(share?.volume ?? untrack(() => preset?.volume) ?? volumes[0]?.name ?? '')
   let description = $state(share?.description ?? '')
   // Every user gets an entry: '' (no access), 'ro' or 'rw'.
   let access = $state(Object.fromEntries(users.map((u) => [u.name, share?.access?.[u.name] ?? ''])))

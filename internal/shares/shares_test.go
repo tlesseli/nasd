@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -441,5 +442,25 @@ func TestWorkgroup(t *testing.T) {
 	conf, _ := os.ReadFile(s.SmbConf)
 	if !strings.Contains(string(conf), "workgroup = FAMILIE") {
 		t.Errorf("smb.conf:\n%s", conf)
+	}
+}
+
+// Folders already on a volume (e.g. adopted from RAIDiator) are offered as
+// shares, except hidden ones, lost+found, existing shares and invalid names.
+func TestUnshared(t *testing.T) {
+	s, _, dir := newTestService(t)
+	vol := filepath.Join(dir, "data", "media")
+	for _, d := range []string{"Photos", "Documents", ".plex", "lost+found", "Shared", "bad name"} {
+		os.MkdirAll(filepath.Join(vol, d), 0o755)
+	}
+	os.WriteFile(filepath.Join(vol, "aquota.user"), nil, 0o600)
+	s.Store.Update(func(st *store.State) error {
+		st.Shares = append(st.Shares, store.Share{Name: "Shared", Volume: "media", Path: filepath.Join(vol, "Shared")})
+		return nil
+	})
+	got := s.Unshared(map[string]string{"media": vol})
+	want := []Folder{{"media", "Documents"}, {"media", "Photos"}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
 	}
 }

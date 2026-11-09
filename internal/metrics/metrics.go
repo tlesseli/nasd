@@ -127,7 +127,10 @@ func (s *Sampler) Run(ctx context.Context) {
 			s.recordStorage(now, s.Storage(ctx))
 			lastStorage = now
 		}
-		if now.Sub(lastSave) >= 10*time.Minute {
+		// Saved rarely: each save writes to the system disks and wakes them
+		// if they sleep. A power cut loses at most these hours of charts;
+		// a normal shutdown or restart saves first.
+		if now.Sub(lastSave) >= 6*time.Hour {
 			s.Save()
 			lastSave = now
 		}

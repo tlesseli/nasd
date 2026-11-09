@@ -13,6 +13,8 @@
   let volumes = $state([])
   let settings = $state({})
   let services = $state([])
+  let unshared = $state([])
+  let preset = $state(null) // {name, volume}: new share for an existing folder
   let loaded = $state(false)
   let error = $state('')
   let notice = $state('')
@@ -27,8 +29,9 @@
 
   async function refresh() {
     try {
-      ;[shares, users, volumes, settings, services] = await Promise.all([
+      ;[shares, users, volumes, settings, services, unshared] = await Promise.all([
         api.get('/api/shares'), api.get('/api/users'), api.get('/api/volumes'), api.get('/api/settings'), api.get('/api/services'),
+        api.get('/api/shares/unshared'),
       ])
       loaded = true
     } catch (e) {
@@ -51,11 +54,17 @@
   const visible = $derived(shares.filter((s) => (filter === 'all' || has[filter](s)) &&
     (!text.trim() || (s.name + ' ' + s.description).toLowerCase().includes(text.trim().toLowerCase()))))
 
+  function newShareFor(f) {
+    preset = { name: f.name, volume: f.volume }
+    selected = '__new__'
+  }
+
   async function save(req) {
     if (selected === '__new__') {
       await api.post('/api/shares', req)
       notice = `Share ${req.name} created.`
       selected = req.name
+      preset = null
     } else {
       await api.post(`/api/shares/${selected}`, req)
       notice = `Share ${selected} saved.`
@@ -104,7 +113,7 @@
       <h1>Shares</h1>
     </div>
     <div class="actions">
-      <button onclick={() => (selected = '__new__')} disabled={!mountedVolumes.length} title={mountedVolumes.length ? '' : 'Create a volume first'}>New share</button>
+      <button onclick={() => ((preset = null), (selected = '__new__'))} disabled={!mountedVolumes.length} title={mountedVolumes.length ? '' : 'Create a volume first'}>New share</button>
     </div>
   </div>
 
@@ -151,6 +160,23 @@
           {/if}
         {/each}
       </div>
+      {#if unshared.length}
+        <div class="card">
+          <h2>Folders not shared yet</h2>
+          <p class="muted small">These folders are already on your volumes (for example from the original ReadyNAS OS). Share one to make it visible on the network: its files stay as they are.</p>
+          <table class="members">
+            <tbody>
+              {#each unshared as f (f.volume + '/' + f.name)}
+                <tr>
+                  <td><Icon name="folder" size={14} /> <strong>{f.name}</strong></td>
+                  <td class="mono muted small">/{f.volume}/{f.name}</td>
+                  <td class="right"><button class="secondary" onclick={() => newShareFor(f)}>Share</button></td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
       <div class="card"><HomeFolders /></div>
       {#if settings.smbDisabled || (!settings.ftpEnabled && shares.some((x) => x.ftp)) || (!settings.rsyncEnabled && shares.some((x) => x.rsync))}
         <p class="hint">Struck-through services are switched off for the whole NAS: <a href="#/system/services">System Settings → Services</a>.</p>
@@ -181,9 +207,9 @@
             <dt>Folder</dt><dd class="mono">{sel.path}</dd>
           </dl>
         {/if}
-        {#key selected}
+        {#key selected + (preset ? preset.volume + '/' + preset.name : '')}
           {#if selected === '__new__' || sel}
-            <ShareForm bare share={sel ?? null} volumes={mountedVolumes} {users} {settings}
+            <ShareForm bare share={sel ?? null} {preset} volumes={mountedVolumes} {users} {settings}
               onSave={save} onCancel={() => (selected = null)} onDelete={sel ? () => askDelete(sel) : undefined} />
           {/if}
         {/key}

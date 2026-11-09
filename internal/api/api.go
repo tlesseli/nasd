@@ -297,7 +297,13 @@ func logRequests(next http.Handler) http.Handler {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: 200}
 		next.ServeHTTP(rec, r)
-		log.Printf("%s %s %d %s", r.Method, r.URL.Path, rec.status, time.Since(start).Round(time.Millisecond))
+		// Only what changes something, fails or is slow: the page polls GETs
+		// every few seconds, and logging them all fills the journal (and
+		// keeps writing to the system disks).
+		took := time.Since(start)
+		if r.Method != http.MethodGet || rec.status >= 400 || took > 2*time.Second {
+			log.Printf("%s %s %d %s", r.Method, r.URL.Path, rec.status, took.Round(time.Millisecond))
+		}
 	})
 }
 

@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -385,6 +386,46 @@ func (s *Service) Shares(ctx context.Context) ([]ShareInfo, error) {
 }
 
 // OnVolume lists the shares stored on a volume (to block deleting it).
+// Folder is a top-level folder of a volume that no share uses yet (e.g. the
+// shares of a volume made by RAIDiator), offered as a new share.
+type Folder struct {
+	Volume string `json:"volume"`
+	Name   string `json:"name"`
+}
+
+// Unshared lists, for each mounted volume (name -> mount point), the folders
+// at its top that could become shares: not shared already, not hidden (".x"),
+// not the home folders, and with a name valid for a share.
+func (s *Service) Unshared(mounts map[string]string) []Folder {
+	st := s.Store.Read()
+	used := map[string]bool{st.Settings.HomeShares.Path: true}
+	for _, sh := range st.Shares {
+		used[sh.Path] = true
+	}
+	out := []Folder{}
+	for vol, mnt := range mounts {
+		entries, err := os.ReadDir(mnt)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			n := e.Name()
+			if !e.IsDir() || strings.HasPrefix(n, ".") || n == "lost+found" || used[filepath.Join(mnt, n)] ||
+				!shareRe.MatchString(n) || slices.Contains(reservedShares, strings.ToLower(n)) {
+				continue
+			}
+			out = append(out, Folder{Volume: vol, Name: n})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Volume != out[j].Volume {
+			return out[i].Volume < out[j].Volume
+		}
+		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+	})
+	return out
+}
+
 func (s *Service) OnVolume(volume string) []string {
 	var names []string
 	st := s.Store.Read()
