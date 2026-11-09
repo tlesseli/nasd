@@ -181,24 +181,26 @@ func (p *Panel) LCDInit() {
 	}
 }
 
-// LCDRelease puts the display back in its power-on 8-bit mode, text kept.
-// Netgear's boot loader writes "Booting..." expecting that mode: after a
-// restart (the display stays powered) it would otherwise find it in our
-// 4-bit mode and show nothing.
-func (p *Panel) LCDRelease() {
+// LCDPark leaves the display the way RAIDiator did before every restart
+// and shutdown (/etc/init.d/reboot: lcd_backlight=0, then lcd_reset):
+// backlight off, then the full start-up sequence (cleared, 4-bit mode).
+// Netgear's boot loader on the flash expects exactly that: left in any
+// other state, it stops at the next start with a blinking cursor.
+func (p *Panel) LCDPark() {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	for _, n := range []byte{3, 3, 3} { // "8-bit mode", from any state
-		p.nibble(false, n)
-		time.Sleep(4100 * time.Microsecond)
-	}
+	p.setBit(regLevel2, lcdBacklight, true) // off (lit when low)
+	p.mu.Unlock()
+	p.LCDInit()
+	p.mu.Lock()
+	p.setBit(regLevel2, lcdBacklight, true)
+	p.mu.Unlock()
 }
 
-// Release: see LCDRelease. The display needs LCDInit again afterwards.
+// Release parks the display (see LCDPark); it needs LCDInit again afterwards.
 func (d *Display) Release() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.p.LCDRelease()
+	d.p.LCDPark()
 	d.ready = false
 }
 

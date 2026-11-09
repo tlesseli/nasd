@@ -45,17 +45,18 @@ func main() {
 	dataDir := flag.String("data", "/var/lib/nasd", "directory for state and TLS certificate")
 	hwmon := flag.String("hwmon", "/sys", "root of the sensors tree (a fake one for tests)")
 	fansFull := flag.Bool("fans-full", false, "set every manually controlled fan to full speed and exit (run by systemd after nasd stops)")
-	lcdMessage := flag.String("lcd-message", "", `show "line 1|line 2" on the front display and exit (run by systemd around nasd)`)
+	lcdMessage := flag.String("lcd-message", "", `show "line 1|line 2" on the front display and exit (run by systemd before nasd starts)`)
+	lcdPark := flag.Bool("lcd-park", false, "leave the front display as the boot loader expects it, and exit (run by systemd after nasd stops)")
 	flag.Parse()
-	if *lcdMessage != "" {
-		l1, l2, _ := strings.Cut(*lcdMessage, "|")
-		out := displayFor(openPanel())
-		lcd.ShowOnce(out, l1, l2)
-		// Run by systemd before nasd starts and after it stops: leave the
-		// display as the boot loader expects it at the next restart.
-		if r, ok := out.(interface{ Release() }); ok {
+	if *lcdPark {
+		if r, ok := displayFor(openPanel()).(interface{ Release() }); ok {
 			r.Release()
 		}
+		return
+	}
+	if *lcdMessage != "" {
+		l1, l2, _ := strings.Cut(*lcdMessage, "|")
+		lcd.ShowOnce(displayFor(openPanel()), l1, l2)
 		return
 	}
 	if *fansFull {

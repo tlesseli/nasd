@@ -12,7 +12,8 @@ RestartSec=2
 # Runs every time nasd stops, crash included: a fan nasd was slowing down
 # must never stay slow without its controller.
 ExecStopPost=/usr/local/bin/nasd -fans-full
-ExecStopPost=-/usr/local/bin/nasd -lcd-message "NAS service|stopped"
+# Leave the front display as the ReadyNAS boot loader expects it (like RAIDiator).
+ExecStopPost=-/usr/local/bin/nasd -lcd-park
 # Runs as root (needs mdadm, smartctl, samba).
 # No PrivateTmp/ProtectHome/ProtectSystem here: those give nasd its own mount
 # namespace, so volumes it mounts would be invisible to the rest of the

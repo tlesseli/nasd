@@ -93,21 +93,10 @@ grep -v '^ARRAY ' /etc/mdadm/mdadm.conf > $NEW/etc/mdadm/mdadm.conf || true
 # (mdadm prints warnings about RAIDiator's array names on stdout: keep ARRAY lines only)
 mdadm --detail --scan 2>/dev/null | grep '^ARRAY ' >> $NEW/etc/mdadm/mdadm.conf
 
-# At the first start from the disks: a boot image with only this machine's
-# drivers (16 MB instead of 42: faster to load from the flash). It can't be
-# built here, where the root is still the USB disk.
-printf 'RESUME=none\n' > $NEW/etc/initramfs-tools/conf.d/resume
-cat > $NEW/etc/systemd/system/nas-initramfs-dep.service <<'UNIT'
-[Unit]
-Description=Boot image with this machine's drivers only (first start from the disks)
-ConditionPathExists=!/var/lib/nas-initramfs-dep.done
-[Service]
-Type=oneshot
-ExecStart=/bin/sh -c 'sed -i "s/^MODULES=.*/MODULES=dep/" /etc/initramfs-tools/initramfs.conf && update-initramfs -u && touch /var/lib/nas-initramfs-dep.done'
-[Install]
-WantedBy=multi-user.target
-UNIT
-ln -sf /etc/systemd/system/nas-initramfs-dep.service $NEW/etc/systemd/system/multi-user.target.wants/nas-initramfs-dep.service
+# The flash: read-only (nas-flash-sync makes it writable only while copying).
+sed -i 's#^\(UUID=[0-9A-F-]* /boot/flash vfat \)defaults,#\1ro,#' $NEW/etc/fstab
+# Note: with MODULES=dep (a 16 MB boot image instead of 42) the ReadyNAS
+# stopped at its next boot (cause not confirmed): keep "most".
 for d in dev dev/pts proc sys run; do mount --bind /$d $NEW/$d; done
 # The flash boots the kernel: GRUB is not used, and its package would try
 # to install itself on the USB disk at every update.

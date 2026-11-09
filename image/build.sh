@@ -107,7 +107,7 @@ write_files:
       for DEV in \$(blkid -t TYPE=vfat -o device); do
         mount -o ro "\$DEV" /mnt/probe 2>/dev/null || continue
         if [ -f /mnt/probe/vpd ] && [ -f /mnt/probe/nas.krn ] && ! grep -q /boot/flash /etc/fstab; then
-          echo "UUID=\$(blkid -s UUID -o value "\$DEV") /boot/flash vfat defaults,nofail 0 0" >> /etc/fstab
+          echo "UUID=\$(blkid -s UUID -o value "\$DEV") /boot/flash vfat ro,nofail 0 0" >> /etc/fstab
         fi
         umount /mnt/probe
       done
@@ -120,15 +120,21 @@ write_files:
     permissions: '0755'
     content: |
       #!/bin/sh
+      # The flash stays mounted read-only; writable only while copying, so a
+      # power cut can never leave it half-written.
       FLASH=/boot/flash
       mountpoint -q \$FLASH || exit 0
       K=\$(ls -1 /boot/vmlinuz-* 2>/dev/null | sort -V | tail -1)
       V=\${K#/boot/vmlinuz-}
       I=/boot/initrd.img-\$V
       [ -f "\$K" ] && [ -f "\$I" ] || exit 0
-      cmp -s "\$K" \$FLASH/nas.krn || cp "\$K" \$FLASH/nas.krn || exit 1
-      cmp -s "\$I" \$FLASH/nas.ird || cp "\$I" \$FLASH/nas.ird || exit 1
+      cmp -s "\$K" \$FLASH/nas.krn && cmp -s "\$I" \$FLASH/nas.ird && exit 0
+      mount -o remount,rw \$FLASH || exit 1
+      ok=0
+      cp "\$K" \$FLASH/nas.krn && cp "\$I" \$FLASH/nas.ird && ok=1
       sync
+      mount -o remount,ro \$FLASH
+      [ \$ok = 1 ] || exit 1
       echo "nas-flash-sync: the flash boots \$V"
   - path: /etc/kernel/postinst.d/zz-nas-flash
     permissions: '0755'
