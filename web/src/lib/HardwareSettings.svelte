@@ -14,8 +14,8 @@
     hw = await api.get('/api/hardware')
     if (!keepForms) {
       backups = await api.get('/api/backups')
-      button = structuredClone(hw.button)
-      fan = structuredClone(hw.fan)
+      button = $state.snapshot(hw.button)
+      fan = $state.snapshot(hw.fan)
       if (!fan.minPercent) Object.assign(fan, { minPercent: 30, lowTemp: 35, highTemp: 45 })
       if (!fan.pwm && hw.outputs.length) fan.pwm = hw.outputs[0].id
     }

@@ -12,7 +12,7 @@
 
   async function load() {
     data = await api.get('/api/power')
-    p = structuredClone(data.settings)
+    p = $state.snapshot(data.settings)
     if (!p.ups.driver) p.ups.driver = 'usbhid-ups'
     offTime = `${pad(p.timer.off.hour)}:${pad(p.timer.off.minute)}`
     onTime = `${pad(p.timer.onHour)}:${pad(p.timer.onMinute)}`

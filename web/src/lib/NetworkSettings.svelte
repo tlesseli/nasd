@@ -13,7 +13,7 @@
     const r = await api.get('/api/network')
     info = r.info
     bondModes = r.bondModes
-    n = structuredClone(info.settings)
+    n = $state.snapshot(info.settings)
     if (!n.interfaces.length && info.physical.length) n.interfaces = [info.physical[0]]
     if (!n.managed) n.dhcp = true
     dnsText = n.dns.join(', ')
