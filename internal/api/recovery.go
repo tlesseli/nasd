@@ -32,7 +32,9 @@ func (s *Server) ResetAdminPassword() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	s.Sessions.DeleteUser(adminUser)
+	if s.Sessions != nil {
+		s.Sessions.DeleteUser(adminUser)
+	}
 	if s.Throttle != nil {
 		s.Throttle.ResetAll()
 	}

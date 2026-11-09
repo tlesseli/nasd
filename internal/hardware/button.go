@@ -87,6 +87,10 @@ func (b *Button) pollGPIO(ctx context.Context) {
 	defer t.Stop()
 	var since time.Time
 	fired, lastLeft := false, -1
+	// Armed only once the pin has been seen released: a pin that reads
+	// "pressed" from the start (stuck, or wired differently) must never
+	// run jobs or reset the admin password.
+	armed := false
 	for {
 		select {
 		case <-ctx.Done():
@@ -94,7 +98,12 @@ func (b *Button) pollGPIO(ctx context.Context) {
 		case <-t.C:
 		}
 		now := time.Now()
-		switch pressed := b.GPIO(); {
+		pressed := b.GPIO()
+		if !armed {
+			armed = !pressed
+			continue
+		}
+		switch {
 		case pressed && since.IsZero():
 			since, fired, lastLeft = now, false, -1
 		case pressed && !fired:

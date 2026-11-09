@@ -8,9 +8,11 @@ import (
 	"crypto/tls"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -46,8 +48,26 @@ func main() {
 	hwmon := flag.String("hwmon", "/sys", "root of the sensors tree (a fake one for tests)")
 	fansFull := flag.Bool("fans-full", false, "set every manually controlled fan to full speed and exit (run by systemd after nasd stops)")
 	lcdMessage := flag.String("lcd-message", "", `show "line 1|line 2" on the front display and exit (run by systemd before nasd starts)`)
+	resetAdmin := flag.Bool("reset-admin", false, "set a new random admin password, print it and exit (over SSH, nasd stopped)")
 	lcdPark := flag.Bool("lcd-park", false, "leave the front display as the boot loader expects it, and exit (run by systemd after nasd stops)")
 	flag.Parse()
+	if *resetAdmin {
+		// nasd keeps state.json in memory and would overwrite the change:
+		// it must be stopped (systemctl stop nasd) while this runs.
+		if out, _ := exec.Command("systemctl", "is-active", "nasd").Output(); strings.TrimSpace(string(out)) == "active" {
+			log.Fatal("stop nasd first: sudo systemctl stop nasd")
+		}
+		st, err := store.Open(filepath.Join(*dataDir, "state.json"))
+		if err != nil {
+			log.Fatal(err)
+		}
+		pw, err := (&api.Server{Store: st}).ResetAdminPassword()
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("New admin password: %s\n", pw)
+		return
+	}
 	if *lcdPark {
 		if r, ok := displayFor(openPanel()).(interface{ Release() }); ok {
 			r.Release()
