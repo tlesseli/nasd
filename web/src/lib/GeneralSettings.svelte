@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import { api } from '../api.js'
+  import { t, N_ } from '../i18n.svelte.js'
 
   // How the NAS identifies itself, and its clock. Changes are collected and
   // saved together (the bar at the bottom), like in the mockup.
@@ -27,11 +28,11 @@
   }
   onMount(load)
 
-  const labels = { name: 'Device name', workgroup: 'Workgroup', timezone: 'Time zone', ntp: 'Automatic time', servers: 'NTP servers', manual: 'Manual time' }
+  const labels = { name: N_('Device name'), workgroup: N_('Workgroup'), timezone: N_('Time zone'), ntp: N_('Automatic time'), servers: N_('NTP servers'), manual: N_('Manual time') }
   const changed = $derived(form ? Object.keys(labels).filter((k) => form[k] !== initial[k]) : [])
 
   async function waitForRestart() {
-    msg = { ok: true, text: 'Saved. The NAS service restarts to apply the new name or time zone; reloading…' }
+    msg = { ok: true, text: t('Saved. The NAS service restarts to apply the new name or time zone; reloading…') }
     await new Promise((r) => setTimeout(r, 4000))
     for (let i = 0; i < 30; i++) {
       try {
@@ -55,7 +56,7 @@
       }
       if (form.name !== initial.name) await api.post('/api/hostname', { name: form.name })
       if (form.name !== initial.name || form.timezone !== initial.timezone) return waitForRestart()
-      msg = { ok: true, text: 'Saved.' }
+      msg = { ok: true, text: t('Saved.') }
       await load()
     } catch (e) {
       msg = { ok: false, text: e.message }
@@ -67,32 +68,32 @@
 
 {#if form}
   <section class="card">
-    <div class="card-head"><div><h2>General</h2><div class="muted small">How this device identifies itself.</div></div></div>
+    <div class="card-head"><div><h2>{t('General')}</h2><div class="muted small">{t('How this device identifies itself.')}</div></div></div>
     <div class="form-row">
-      <div class="what">Device name<small>Shown on the network, in Finder and Explorer. Max 15 characters.</small></div>
-      <input bind:value={form.name} maxlength="15" spellcheck="false" class="mono" aria-label="Device name" />
+      <div class="what">{t('Device name')}<small>{t('Shown on the network, in Finder and Explorer. Max 15 characters.')}</small></div>
+      <input bind:value={form.name} maxlength="15" spellcheck="false" class="mono" aria-label={t('Device name')} />
     </div>
     <div class="form-row">
-      <div class="what">Workgroup<small>SMB workgroup (Windows network neighbourhood).</small></div>
-      <input bind:value={form.workgroup} maxlength="15" spellcheck="false" class="mono" aria-label="Workgroup" />
+      <div class="what">{t('Workgroup')}<small>{t('SMB workgroup (Windows network neighbourhood).')}</small></div>
+      <input bind:value={form.workgroup} maxlength="15" spellcheck="false" class="mono" aria-label={t('Workgroup')} />
     </div>
     <div class="form-row">
-      <div class="what">Time zone<small>Used for schedules and logs. Now: {new Date(timeInfo.now).toLocaleString()}{timeInfo.synced ? ' · synchronized' : ''}</small></div>
-      <select bind:value={form.timezone} aria-label="Time zone">{#each zones as z}<option>{z}</option>{/each}</select>
+      <div class="what">{t('Time zone')}<small>{timeInfo.synced ? t('Used for schedules and logs. Now: {now} · synchronized', { now: new Date(timeInfo.now).toLocaleString() }) : t('Used for schedules and logs. Now: {now}', { now: new Date(timeInfo.now).toLocaleString() })}</small></div>
+      <select bind:value={form.timezone} aria-label={t('Time zone')}>{#each zones as z}<option>{z}</option>{/each}</select>
     </div>
     <div class="form-row">
-      <div class="what">Automatic time<small>From internet time servers (NTP).</small></div>
-      <label class="check"><input type="checkbox" bind:checked={form.ntp} /> <span>Set the time automatically</span></label>
+      <div class="what">{t('Automatic time')}<small>{t('From internet time servers (NTP).')}</small></div>
+      <label class="check"><input type="checkbox" bind:checked={form.ntp} /> <span>{t('Set the time automatically')}</span></label>
     </div>
     {#if form.ntp}
       <div class="form-row">
-        <div class="what">NTP servers<small>Comma-separated; empty = Debian's default pool.</small></div>
-        <input bind:value={form.servers} placeholder="pool.ntp.org, time.cloudflare.com" spellcheck="false" class="mono" aria-label="NTP servers" />
+        <div class="what">{t('NTP servers')}<small>{t("Comma-separated; empty = Debian's default pool.")}</small></div>
+        <input bind:value={form.servers} placeholder="pool.ntp.org, time.cloudflare.com" spellcheck="false" class="mono" aria-label={t('NTP servers')} />
       </div>
     {:else}
       <div class="form-row">
-        <div class="what">Set the time to<small>Format 2026-11-08 20:15:00.</small></div>
-        <input bind:value={form.manual} placeholder="2026-11-08 20:15:00" class="mono" aria-label="Manual time" />
+        <div class="what">{t('Set the time to')}<small>{t('Format 2026-11-08 20:15:00.')}</small></div>
+        <input bind:value={form.manual} placeholder="2026-11-08 20:15:00" class="mono" aria-label={t('Manual time')} />
       </div>
     {/if}
   </section>
@@ -100,10 +101,10 @@
   {#if msg}<p class={msg.ok ? 'notice' : 'error'}>{msg.text}</p>{/if}
   {#if changed.length}
     <div class="savebar">
-      <span class="small">{changed.length} unsaved change{changed.length > 1 ? 's' : ''} · {changed.map((k) => labels[k]).join(', ')}</span>
+      <span class="small">{changed.length > 1 ? t('{n} unsaved changes · {fields}', { n: changed.length, fields: changed.map((k) => t(labels[k])).join(', ') }) : t('{n} unsaved change · {fields}', { n: changed.length, fields: changed.map((k) => t(labels[k])).join(', ') })}</span>
       <span class="spacer"></span>
-      <button class="link" onclick={() => (form = { ...initial })} disabled={busy}>Discard</button>
-      <button class="save" onclick={save} disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button>
+      <button class="link" onclick={() => (form = { ...initial })} disabled={busy}>{t('Discard')}</button>
+      <button class="save" onclick={save} disabled={busy}>{busy ? t('Saving…') : t('Save changes')}</button>
     </div>
   {/if}
 {/if}

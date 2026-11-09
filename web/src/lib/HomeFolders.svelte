@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import { api } from '../api.js'
+  import { t } from '../i18n.svelte.js'
 
   // Private home share per user, shown on the Shares page.
   let homes = $state(null)
@@ -28,19 +29,19 @@
 </script>
 
 {#if homes}
+  {@const parts = t('every user gets a private share named after them ({example}) that only they can open').split('{example}')}
   <div class="row">
     <label class="check">
       <input type="checkbox" checked={homes.enabled} disabled={!homes.enabled && !volume}
         onchange={(e) => set(e.currentTarget.checked)} />
-      <span><strong>Home folders</strong> <span class="muted small">· every user gets a private share named after them
-        (<span class="mono">\\nas\alice</span>) that only they can open</span></span>
+      <span><strong>{t('Home folders')}</strong> <span class="muted small">· {parts[0]}<span class="mono">\\nas\alice</span>{parts[1] ?? ''}</span></span>
     </label>
     <span class="spacer"></span>
     {#if homes.enabled}
       <span class="muted small mono">{homes.path}</span>
     {:else if volumes.length > 1}
-      <select bind:value={volume} aria-label="Volume for home folders">
-        {#each volumes as v (v.name)}<option value={v.name}>on {v.name}</option>{/each}
+      <select bind:value={volume} aria-label={t('Volume for home folders')}>
+        {#each volumes as v (v.name)}<option value={v.name}>{t('on {name}', { name: v.name })}</option>{/each}
       </select>
     {/if}
   </div>

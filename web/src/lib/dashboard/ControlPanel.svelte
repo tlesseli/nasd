@@ -5,6 +5,7 @@
   import { onMount } from 'svelte'
   import { api, formatBytes } from '../../api.js'
   import { createDashboardData, pools, latest, cpuTemp, memPercent, diskState, bays, uptimeParts, alarms } from './data.svelte.js'
+  import { t } from '../../i18n.svelte.js'
 
   let { onSessionLost } = $props()
   const { d, start } = createDashboardData(onSessionLost)
@@ -14,10 +15,10 @@
   const m = $derived(latest(d.metrics))
   const netPeak = $derived(Math.max(1e6, ...d.metrics.map((p) => p.netRx ?? 0)))
   const instruments = $derived([
-    { label: 'CPU load', value: m?.cpu ?? 0, max: 100, text: `${String(Math.round(m?.cpu ?? 0)).padStart(3, '0')} %`, warn: 70, crit: 90 },
-    { label: 'Memory', value: memPercent(d.sys), max: 100, text: `${String(Math.round(memPercent(d.sys))).padStart(3, '0')} %`, warn: 80, crit: 92 },
-    { label: 'CPU temp', value: cpuTemp(d.sensors), max: 100, text: `${String(Math.round(cpuTemp(d.sensors))).padStart(3, '0')} °C`, warn: 70, crit: 85 },
-    { label: 'Net in', value: (m?.netRx ?? 0) / 1e6, max: Math.max(10, Math.ceil(netPeak / 1e6 / 10) * 10),
+    { label: t('CPU load'), value: m?.cpu ?? 0, max: 100, text: `${String(Math.round(m?.cpu ?? 0)).padStart(3, '0')} %`, warn: 70, crit: 90 },
+    { label: t('Memory'), value: memPercent(d.sys), max: 100, text: `${String(Math.round(memPercent(d.sys))).padStart(3, '0')} %`, warn: 80, crit: 92 },
+    { label: t('CPU temp'), value: cpuTemp(d.sensors), max: 100, text: `${String(Math.round(cpuTemp(d.sensors))).padStart(3, '0')} °C`, warn: 70, crit: 85 },
+    { label: t('Net in'), value: (m?.netRx ?? 0) / 1e6, max: Math.max(10, Math.ceil(netPeak / 1e6 / 10) * 10),
       text: `${((m?.netRx ?? 0) / 1e6).toFixed(1)} MB/S`, warn: Infinity, crit: Infinity },
   ])
   // A dial: 270° sweep from bottom-left, ticks, green/amber/red bands.
@@ -36,14 +37,14 @@
   let acked = $state('')
   const problemKey = $derived(d.problems.map((p) => p.key).join('|'))
   const lamps = $derived([
-    { label: 'Disk fault', on: al.diskFault, color: 'amber' },
-    { label: 'Volume degraded', on: al.poolDegraded, color: 'red' },
-    { label: 'Sync running', on: al.sync, color: 'amber' },
-    { label: 'Overtemp', on: al.overtemp, color: 'red' },
-    { label: 'Net link', on: al.netLink, color: 'green' },
-    { label: 'UPS on batt', on: al.onBattery, color: 'red' },
-    { label: 'On mains', on: al.onMains, color: 'green' },
-    { label: 'Backup fail', on: al.backupFail, color: 'amber' },
+    { label: t('Disk fault'), on: al.diskFault, color: 'amber' },
+    { label: t('Volume degraded'), on: al.poolDegraded, color: 'red' },
+    { label: t('Sync running'), on: al.sync, color: 'amber' },
+    { label: t('Overtemp'), on: al.overtemp, color: 'red' },
+    { label: t('Net link'), on: al.netLink, color: 'green' },
+    { label: t('UPS on batt'), on: al.onBattery, color: 'red' },
+    { label: t('On mains'), on: al.onMains, color: 'green' },
+    { label: t('Backup fail'), on: al.backupFail, color: 'amber' },
   ])
   function testLamps() {
     lampTest = true
@@ -83,7 +84,7 @@
         release()
         try {
           await api.post('/api/system/power', { action, force: false })
-          powerMsg = action === 'reboot' ? 'Restarting… this page reconnects when the NAS is back.' : 'Shutting down…'
+          powerMsg = action === 'reboot' ? t('Restarting… this page reconnects when the NAS is back.') : t('Shutting down…')
         } catch (e) {
           powerMsg = e.message
         }
@@ -101,21 +102,21 @@
   <header class="plate">
     <div>
       <div class="title">{(d.sys?.hostname ?? 'NAS').toUpperCase()}</div>
-      <div class="sub">Storage control panel · ReadyNAS Ultra 4 · nasd {d.sys?.version ?? ''}</div>
+      <div class="sub">{t('Storage control panel')} · ReadyNAS Ultra 4 · nasd {d.sys?.version ?? ''}</div>
     </div>
-    <div class="sysled"><span class="led" class:green={d.loaded && !d.error} class:red={!!d.error}></span>{d.error ? 'NO SIGNAL' : 'SYSTEM ON'}</div>
+    <div class="sysled"><span class="led" class:green={d.loaded && !d.error} class:red={!!d.error}></span>{d.error ? t('NO SIGNAL') : t('SYSTEM ON')}</div>
     <nav>
-      <a class="key on" href="#/">Overview</a>
-      <a class="key" href="#/volumes">Storage</a>
-      <a class="key" href="#/shares">Shares</a>
-      <a class="key" href="#/users">Users</a>
-      <a class="key" href="#/system">Setup</a>
+      <a class="key on" href="#/">{t('Overview')}</a>
+      <a class="key" href="#/volumes">{t('Storage')}</a>
+      <a class="key" href="#/shares">{t('Shares')}</a>
+      <a class="key" href="#/users">{t('Users')}</a>
+      <a class="key" href="#/system">{t('Setup')}</a>
     </nav>
   </header>
 
   <div class="grid">
     <section class="panel instruments">
-      <h3 class="tag">Primary instruments</h3>
+      <h3 class="tag">{t('Primary instruments')}</h3>
       <div class="dials">
         {#each instruments as g (g.label)}
           {@const max = g.max}
@@ -143,7 +144,7 @@
     </section>
 
     <section class="panel annunciator">
-      <h3 class="tag">Alarm annunciator</h3>
+      <h3 class="tag">{t('Alarm annunciator')}</h3>
       <div class="lamps">
         {#each lamps as l (l.label)}
           <div class="lamp {l.color}" class:lit={l.on || lampTest} class:flash={l.on && l.color !== 'green' && acked !== problemKey}>{l.label}</div>
@@ -151,37 +152,37 @@
       </div>
       <div class="log mono">
         {#each d.problems.slice(0, 4) as p (p.key)}<div class:crit={p.severity === 'critical'}>&gt; {p.subject}</div>
-        {:else}<div class="ok">&gt; All systems normal</div>{/each}
+        {:else}<div class="ok">&gt; {t('All systems normal')}</div>{/each}
       </div>
       <div class="buttons">
-        <button class="mush yellow" onclick={() => (acked = problemKey)} aria-label="Acknowledge alarms"></button>
-        <button class="mush white" onclick={testLamps} aria-label="Lamp test"></button>
-        <a class="mush blue" href="#/system/events" aria-label="Event log"></a>
-        <span class="tag small">ACK</span><span class="tag small">Lamp test</span><span class="tag small">Log</span>
+        <button class="mush yellow" onclick={() => (acked = problemKey)} aria-label={t('Acknowledge alarms')}></button>
+        <button class="mush white" onclick={testLamps} aria-label={t('Lamp test')}></button>
+        <a class="mush blue" href="#/system/events" aria-label={t('Event log')}></a>
+        <span class="tag small">{t('ACK')}</span><span class="tag small">{t('Lamp test')}</span><span class="tag small">{t('Log')}</span>
       </div>
     </section>
 
     <section class="panel levels">
-      <h3 class="tag">Volume levels</h3>
+      <h3 class="tag">{t('Volume levels')}</h3>
       <div class="meters">
         {#each ps as v (v.name)}
           {@const pct = v.totalBytes ? (100 * v.usedBytes) / v.totalBytes : 0}
           <div class="meter">
             <div class="scale"><span>100</span><span>75</span><span>50</span><span>25</span><span>0</span></div>
-            <div class="bar" role="img" aria-label="{v.name}: {Math.round(pct)}% used">
+            <div class="bar" role="img" aria-label={t('{name}: {percent}% used', { name: v.name, percent: Math.round(pct) })}>
               {#each Array(SEGS) as _, i}{@const lvl = (SEGS - i) * (100 / SEGS)}<span class:on={pct >= lvl - 100 / SEGS / 2} class:amber={lvl > 75} class:red={lvl > 90}></span>{/each}
             </div>
             <div class="readout small">{Math.round(pct)} %</div>
             <div class="tag small">{v.name}</div>
             <div class="note">{formatBytes(v.usedBytes)} / {formatBytes(v.totalBytes || v.sizeBytes)}</div>
           </div>
-        {:else}<p class="note">No volume mounted.</p>{/each}
+        {:else}<p class="note">{t('No volume mounted.')}</p>{/each}
       </div>
     </section>
 
     <section class="panel bays">
-      <h3 class="tag">Drive bays</h3>
-      <div class="legend"><span><i class="led green"></i>Health OK</span><span><i class="led amber"></i>Fault</span><span><i class="led blue"></i>Spinning</span></div>
+      <h3 class="tag">{t('Drive bays')}</h3>
+      <div class="legend"><span><i class="led green"></i>{t('Health OK')}</span><span><i class="led amber"></i>{t('Fault')}</span><span><i class="led blue"></i>{t('Spinning')}</span></div>
       <div class="rack">
         {#each bayList as b (b.n)}
           {@const st = diskState(b.disk)}
@@ -192,25 +193,25 @@
               <i class="led" class:green={st === 'ok'} class:amber={st === 'fault' || st === 'warn'}></i>
               <i class="led" class:blue={b.disk && !b.disk.health?.standby}></i>
             </div>
-            <div class="cap">{b.disk ? formatBytes(b.disk.sizeBytes) : 'EMPTY'}</div>
+            <div class="cap">{b.disk ? formatBytes(b.disk.sizeBytes) : t('EMPTY')}</div>
             {#if b.disk?.health?.temperatureC}<div class="note">{b.disk.health.temperatureC} °C</div>{/if}
           </a>
         {/each}
       </div>
       <div class="foot mono">
-        <span>Temp max {hottest.t || '—'} °C{hottest.bay ? ` · bay ${hottest.bay}` : ''}</span>
-        <span>{fans.map((f, i) => `Fan ${i + 1} ${f.fanRpm} RPM`).join(' · ') || 'Fan —'}</span>
+        <span>{t('Temp max {temp} °C', { temp: hottest.t || '—' })}{hottest.bay ? ` · ${t('bay {bay}', { bay: hottest.bay })}` : ''}</span>
+        <span>{fans.map((f, i) => t('Fan {n} {rpm} RPM', { n: i + 1, rpm: f.fanRpm })).join(' · ') || t('Fan —')}</span>
       </div>
     </section>
 
     <section class="panel switches">
-      <h3 class="tag">Service switches</h3>
+      <h3 class="tag">{t('Service switches')}</h3>
       <div class="sw-row">
         {#each switches as s (s.label)}
-          <a class="sw" href="#/system/services" title="Change in System Settings → Services">
-            <span class="sw-on">ON</span>
+          <a class="sw" href="#/system/services" title={t('Change in System Settings → Services')}>
+            <span class="sw-on">{t('ON')}</span>
             <span class="toggle" class:up={s.on}><span class="lever"></span></span>
-            <span class="sw-on">OFF</span>
+            <span class="sw-on">{t('OFF')}</span>
             <i class="led" class:green={s.on}></i>
             <span class="tag small">{s.label}</span>
           </a>
@@ -219,34 +220,34 @@
     </section>
 
     <section class="panel counters">
-      <h3 class="tag">Counters</h3>
-      <div class="ctr-label">Uptime D : H : M</div>
+      <h3 class="tag">{t('Counters')}</h3>
+      <div class="ctr-label">{t('Uptime D : H : M')}</div>
       <div class="digits">
         {#each digits(up.d, 3) as c}<span>{c}</span>{/each}<b>:</b>{#each digits(up.h, 2) as c}<span>{c}</span>{/each}<b>:</b>{#each digits(up.m, 2) as c}<span>{c}</span>{/each}
       </div>
-      <div class="ctr-label">Data served · last hour MB</div>
+      <div class="ctr-label">{t('Data served · last hour MB')}</div>
       <div class="digits">{#each digits(servedMB, 6) as c}<span>{c}</span>{/each}</div>
-      <div class="ctr-label">Backup jobs OK</div>
+      <div class="ctr-label">{t('Backup jobs OK')}</div>
       <div class="digits">{#each digits(backupsOK, 3) as c}<span>{c}</span>{/each}</div>
     </section>
 
     <section class="panel power">
-      <h3 class="tag">Power</h3>
+      <h3 class="tag">{t('Power')}</h3>
       <div class="pw">
         <div class="stop-wrap">
           <button class="stop" style="--p: {holding === 'poweroff' ? progress : 0}"
             onpointerdown={() => press('poweroff')} onpointerup={release} onpointerleave={release}
-            onkeydown={(e) => e.key === ' ' && !holding && press('poweroff')} onkeyup={release} aria-label="Shut down: hold 3 seconds">STOP</button>
-          <span class="tag">Shutdown</span>
+            onkeydown={(e) => e.key === ' ' && !holding && press('poweroff')} onkeyup={release} aria-label={t('Shut down: hold 3 seconds')}>{t('STOP')}</button>
+          <span class="tag">{t('Shutdown')}</span>
         </div>
         <div class="stop-wrap">
           <button class="restart" style="--p: {holding === 'reboot' ? progress : 0}"
             onpointerdown={() => press('reboot')} onpointerup={release} onpointerleave={release}
-            onkeydown={(e) => e.key === ' ' && !holding && press('reboot')} onkeyup={release} aria-label="Restart: hold 3 seconds">↻</button>
-          <span class="tag">Restart</span>
+            onkeydown={(e) => e.key === ' ' && !holding && press('reboot')} onkeyup={release} aria-label={t('Restart: hold 3 seconds')}>↻</button>
+          <span class="tag">{t('Restart')}</span>
         </div>
       </div>
-      <p class="note center">{powerMsg || 'Hold 3 s to confirm · connected computers lose their shares'}</p>
+      <p class="note center">{powerMsg || t('Hold 3 s to confirm · connected computers lose their shares')}</p>
     </section>
   </div>
 </div>

@@ -2,6 +2,7 @@
   // Time series chart (1 or 2 series), following the dataviz rules: one
   // y-axis, 2px lines over a faint area, recessive grid, legend for 2
   // series + direct labels at the line ends, crosshair + tooltip on hover.
+  import { t } from '../i18n.svelte.js'
   //   points: [{t (unix s), [key]: number}]   series: [{key, label, color}]
   let { points = [], series = [], height = 180, format = (v) => String(v), compact = false, timeFormat } = $props()
 
@@ -49,9 +50,9 @@
 
 <div class="tc" bind:clientWidth={width} style="height: {height}px">
   {#if points.length < 2}
-    <div class="tc-empty muted small">Collecting data… the first points appear within a minute.</div>
+    <div class="tc-empty muted small">{t('Collecting data… the first points appear within a minute.')}</div>
   {:else}
-    <svg {width} {height} role="img" aria-label={series.map((s) => s.label).join(' and ') + ' over time'}
+    <svg {width} {height} role="img" aria-label={t('{series} over time', { series: series.map((s) => s.label).join(` ${t('and')} `) })}
       onpointermove={move} onpointerleave={() => (hover = null)}>
       {#if !compact}
         {#each [0.25, 0.5, 0.75, 1] as f}
@@ -60,7 +61,7 @@
         <line x1={pad.l} x2={pad.l + innerW} y1={pad.t + innerH} y2={pad.t + innerH} stroke="var(--border-strong)" />
         {#each ticks as i, n (n)}
           <text x={x(i)} y={height - 6} fill="var(--muted)" font-size="10.5"
-            text-anchor={n === 0 ? 'start' : i === points.length - 1 ? 'end' : 'middle'}>{i === points.length - 1 ? 'now' : fmtTime(points[i].t)}</text>
+            text-anchor={n === 0 ? 'start' : i === points.length - 1 ? 'end' : 'middle'}>{i === points.length - 1 ? t('now') : fmtTime(points[i].t)}</text>
         {/each}
       {/if}
       {#each series as s (s.key)}

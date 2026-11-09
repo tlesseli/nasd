@@ -4,6 +4,7 @@
   import Icon from '../ui/Icon.svelte'
   import Donut from '../ui/Donut.svelte'
   import TimeChart from '../ui/TimeChart.svelte'
+  import { t, N_ } from '../i18n.svelte.js'
 
   let { user, onSessionLost, problems = [] } = $props()
 
@@ -98,35 +99,37 @@
   // ---- misc
   const greeting = $derived.by(() => {
     const h = new Date().getHours()
-    return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'
+    return h < 12 ? N_('Good morning') : h < 18 ? N_('Good afternoon') : N_('Good evening')
   })
-  function ago(t) {
-    const s = (Date.now() - new Date(t)) / 1000
-    if (s < 60) return 'just now'
-    if (s < 3600) return `${Math.floor(s / 60)} min ago`
-    if (s < 86400) return `Today ${new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-    return new Date(t).toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ' + new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  function ago(when) {
+    const s = (Date.now() - new Date(when)) / 1000
+    if (s < 60) return t('just now')
+    if (s < 3600) return t('{n} min ago', { n: Math.floor(s / 60) })
+    if (s < 86400) return t('Today {time}', { time: new Date(when).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) })
+    return new Date(when).toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ' + new Date(when).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
-  const shortName = { smbd: 'SMB', wsdd2: 'Win discovery', 'avahi-daemon': 'Bonjour', rsync: 'rsync', vsftpd: 'FTP', ups: 'UPS' }
+  const shortName = { smbd: 'SMB', wsdd2: N_('Win discovery'), 'avahi-daemon': 'Bonjour', rsync: 'rsync', vsftpd: 'FTP', ups: 'UPS' }
   const sevDot = { critical: 'bad', warning: 'warn', info: '' }
-  const levelText = (v) => `${v.level.replace('raid', 'RAID ')} · ${v.members.length} disk${v.members.length > 1 ? 's' : ''}`
-  const statusBadge = (s) => ({ healthy: ['good', 'Healthy'], degraded: ['warn', 'Degraded'], failed: ['bad', 'Failed'],
-    rebuilding: ['info', 'Rebuilding'], syncing: ['info', 'Syncing'], checking: ['info', 'Checking'], reshaping: ['info', 'Expanding'] }[s] ?? ['neutral', s])
+  const levelText = (v) => v.members.length > 1
+    ? t('{level} · {n} disks', { level: v.level.replace('raid', 'RAID '), n: v.members.length })
+    : t('{level} · {n} disk', { level: v.level.replace('raid', 'RAID '), n: v.members.length })
+  const statusBadge = (s) => ({ healthy: ['good', N_('Healthy')], degraded: ['warn', N_('Degraded')], failed: ['bad', N_('Failed')],
+    rebuilding: ['info', N_('Rebuilding')], syncing: ['info', N_('Syncing')], checking: ['info', N_('Checking')], reshaping: ['info', N_('Expanding')] }[s] ?? ['neutral', s])
 </script>
 
 <main class="page">
   <div class="page-head">
     <div>
-      <div class="eyebrow">{greeting}, {user}</div>
-      <h1>Overview</h1>
+      <div class="eyebrow">{t(greeting)}, {user}</div>
+      <h1>{t('Overview')}</h1>
     </div>
     <div class="actions add">
-      <div class="segmented-btns" role="group" aria-label="Time range">
+      <div class="segmented-btns" role="group" aria-label={t('Time range')}>
         {#each ['1h', '24h', '7d', '30d'] as r}
           <button class:on={range === r} aria-pressed={range === r} onclick={() => (range = r)}>{r}</button>
         {/each}
       </div>
-      <a class="icon-btn bell" href="#/system/events" aria-label="Events" title="Events">
+      <a class="icon-btn bell" href="#/system/events" aria-label={t('Events')} title={t('Events')}>
         <Icon name="bell" size={17} />{#if problems.length}<span class="bell-dot"></span>{/if}
       </a>
     </div>
@@ -138,13 +141,13 @@
     <section class="card storage">
       <Donut percent={total ? (100 * used) / total : 0} />
       <div class="storage-body">
-        <div class="muted small">Storage capacity</div>
-        <div class="big">{formatBytes(used)} <span class="muted">of {formatBytes(total)}</span></div>
+        <div class="muted small">{t('Storage capacity')}</div>
+        <div class="big">{formatBytes(used)} <span class="muted">{t('of {total}', { total: formatBytes(total) })}</span></div>
         <div class="muted small">
           {#if growth}
-            {growth.perWeek >= 0 ? '+' : '−'}{formatBytes(Math.abs(growth.perWeek))} this week{growth.months ? ` · full in ~${Math.max(1, Math.round(growth.months))} months at this rate` : ''}
+            {t('{amount} this week', { amount: (growth.perWeek >= 0 ? '+' : '−') + formatBytes(Math.abs(growth.perWeek)) })}{growth.months ? ' · ' + t('full in ~{n} months at this rate', { n: Math.max(1, Math.round(growth.months)) }) : ''}
           {:else}
-            Growth appears after a day of history.
+            {t('Growth appears after a day of history.')}
           {/if}
         </div>
         <div class="pools">
@@ -156,10 +159,10 @@
               <span class="muted small hide-sm">{levelText(v)}</span>
               <span class="spacer"></span>
               <span class="small">{formatBytes(v.usedBytes)} / {formatBytes(v.totalBytes || v.sizeBytes)}</span>
-              <span class="badge {cls}">{txt}</span>
+              <span class="badge {cls}">{t(txt)}</span>
             </a>
           {:else}
-            <a class="pool" href="#/volumes"><span class="muted small">No volume yet: create one</span></a>
+            <a class="pool" href="#/volumes"><span class="muted small">{t('No volume yet: create one')}</span></a>
           {/each}
         </div>
       </div>
@@ -167,58 +170,58 @@
 
     {#if top}
       <section class="card attention" class:critical={top.severity === 'critical'}>
-        <div class="card-head"><span class="att-icon"><Icon name="alert" size={16} /></span><h2>Needs attention</h2></div>
+        <div class="card-head"><span class="att-icon"><Icon name="alert" size={16} /></span><h2>{t('Needs attention')}</h2></div>
         <h3>{top.subject}</h3>
         <p class="small att-body">{top.body}</p>
         <div class="add att-actions">
-          <a class="btn-like" href={reviewLink(top.kind)}>Review</a>
-          {#if problems.length > 1}<a class="small" href="#/system/events">+{problems.length - 1} more</a>{/if}
+          <a class="btn-like" href={reviewLink(top.kind)}>{t('Review')}</a>
+          {#if problems.length > 1}<a class="small" href="#/system/events">{t('+{n} more', { n: problems.length - 1 })}</a>{/if}
         </div>
       </section>
     {:else}
       <section class="card all-good">
-        <div class="card-head"><span class="ok-icon"><Icon name="check" size={16} /></span><h2>All good</h2></div>
-        <p class="small muted">No problem detected: volumes are redundant, disks report healthy{services.some((s) => s.unit === 'ups') ? ', the UPS is on mains power' : ''}.</p>
+        <div class="card-head"><span class="ok-icon"><Icon name="check" size={16} /></span><h2>{t('All good')}</h2></div>
+        <p class="small muted">{services.some((s) => s.unit === 'ups') ? t('No problem detected: volumes are redundant, disks report healthy, the UPS is on mains power.') : t('No problem detected: volumes are redundant, disks report healthy.')}</p>
       </section>
     {/if}
   </div>
 
   <div class="grid cols-3 ov-row">
     <section class="card metric">
-      <div class="card-head"><span class="muted small">CPU</span><span class="spacer"></span>
-        <span class="muted small">{sys?.cores ?? '–'} core{sys?.cores === 1 ? '' : 's'}{cpuTemp ? ` · ${Math.round(cpuTemp)} °C` : ''}</span></div>
+      <div class="card-head"><span class="muted small">{t('CPU')}</span><span class="spacer"></span>
+        <span class="muted small">{sys?.cores === 1 ? t('{n} core', { n: 1 }) : t('{n} cores', { n: sys?.cores ?? '–' })}{cpuTemp ? ` · ${Math.round(cpuTemp)} °C` : ''}</span></div>
       <div class="value">{latest ? Math.round(latest.cpu) : '–'} <small>%</small></div>
-      <TimeChart compact height={54} points={metrics} series={[{ key: 'cpu', label: 'CPU', color: 'var(--series-read)' }]} format={(v) => `${v.toFixed(0)} %`} />
+      <TimeChart compact height={54} points={metrics} series={[{ key: 'cpu', label: t('CPU'), color: 'var(--series-read)' }]} format={(v) => `${v.toFixed(0)} %`} />
     </section>
     <section class="card metric">
-      <div class="card-head"><span class="muted small">Memory</span><span class="spacer"></span>
-        <span class="muted small">{sys ? formatBytes(sys.memTotalBytes) : ''} installed</span></div>
-      <div class="value">{latest ? formatBytes(latest.memUsed) : '–'} <small>used</small></div>
-      <TimeChart compact height={54} points={metrics} series={[{ key: 'memUsed', label: 'Memory', color: 'var(--series-read)' }]} format={formatBytes} />
+      <div class="card-head"><span class="muted small">{t('Memory')}</span><span class="spacer"></span>
+        <span class="muted small">{t('{size} installed', { size: sys ? formatBytes(sys.memTotalBytes) : '' })}</span></div>
+      <div class="value">{latest ? formatBytes(latest.memUsed) : '–'} <small>{t('used')}</small></div>
+      <TimeChart compact height={54} points={metrics} series={[{ key: 'memUsed', label: t('Memory'), color: 'var(--series-read)' }]} format={formatBytes} />
     </section>
     <section class="card metric">
-      <div class="card-head"><span class="muted small">Network</span><span class="spacer"></span>
-        <span class="muted small">out {latest ? fmtRate(latest.netTx) : '–'}</span></div>
-      <div class="value">{latest ? fmtRate(latest.netRx).split(' ')[0] : '–'} <small>{latest ? fmtRate(latest.netRx).split(' ')[1] : ''} in</small></div>
-      <TimeChart compact height={54} points={metrics} series={[{ key: 'netRx', label: 'In', color: 'var(--series-read)' }]} format={fmtRate} />
+      <div class="card-head"><span class="muted small">{t('Network')}</span><span class="spacer"></span>
+        <span class="muted small">{t('out {rate}', { rate: latest ? fmtRate(latest.netTx) : '–' })}</span></div>
+      <div class="value">{latest ? fmtRate(latest.netRx).split(' ')[0] : '–'} <small>{t('{unit} in', { unit: latest ? fmtRate(latest.netRx).split(' ')[1] : '' })}</small></div>
+      <TimeChart compact height={54} points={metrics} series={[{ key: 'netRx', label: t('In'), color: 'var(--series-read)' }]} format={fmtRate} />
     </section>
   </div>
 
   <div class="grid ov-top ov-row">
     <section class="card">
       <div class="card-head">
-        <h2>Disk throughput</h2>
+        <h2>{t('Disk throughput')}</h2>
         <span class="spacer"></span>
-        <span class="legend"><span class="key" style="background: var(--series-read)"></span>Read · peak {fmtRate(peak('diskRead'))}</span>
-        <span class="legend"><span class="key" style="background: var(--series-write)"></span>Write · peak {fmtRate(peak('diskWrite'))}</span>
+        <span class="legend"><span class="key" style="background: var(--series-read)"></span>{t('Read · peak {rate}', { rate: fmtRate(peak('diskRead')) })}</span>
+        <span class="legend"><span class="key" style="background: var(--series-write)"></span>{t('Write · peak {rate}', { rate: fmtRate(peak('diskWrite')) })}</span>
       </div>
       <TimeChart height={210} points={metrics} {timeFormat} format={fmtRate}
-        series={[{ key: 'diskRead', label: 'Read', color: 'var(--series-read)' }, { key: 'diskWrite', label: 'Write', color: 'var(--series-write)' }]} />
+        series={[{ key: 'diskRead', label: t('Read'), color: 'var(--series-read)' }, { key: 'diskWrite', label: t('Write'), color: 'var(--series-write)' }]} />
     </section>
 
     <section class="card">
-      <div class="card-head"><h2>Drive bays</h2><span class="spacer"></span>
-        <span class="muted small">{bays.filter((b) => b.disk).length} of {BAYS} in use</span></div>
+      <div class="card-head"><h2>{t('Drive bays')}</h2><span class="spacer"></span>
+        <span class="muted small">{t('{n} of {total} in use', { n: bays.filter((b) => b.disk).length, total: BAYS })}</span></div>
       <div class="bays">
         {#each bays as b (b.n)}
           {@const st = diskState(b.disk)}
@@ -227,11 +230,11 @@
             <span class="dot" class:warn={st === 'warn'} class:bad={st === 'bad'} class:off={st === 'off'} class:empty={!b.disk}></span>
             <span class="bay-n">{b.n}</span>
             {#if b.disk}
-              <span class="bay-what">{volumeOf[b.disk.name] ?? 'free'} · {b.disk.model || b.disk.name}{st === 'warn' ? ' · SMART warning' : st === 'bad' ? ' · failing' : ''}</span>
+              <span class="bay-what">{volumeOf[b.disk.name] ?? t('free')} · {b.disk.model || b.disk.name}{st === 'warn' ? ' · ' + t('SMART warning') : st === 'bad' ? ' · ' + t('failing') : ''}</span>
               <span class="spacer"></span>
               <span class="small">{b.disk.health?.temperatureC ? `${b.disk.health.temperatureC}°` : ''}</span>
             {:else}
-              <span class="muted">Empty</span>
+              <span class="muted">{t('Empty')}</span>
             {/if}
           </a>
         {/each}
@@ -241,51 +244,51 @@
 
   <div class="grid cols-3 ov-row">
     <section class="card">
-      <div class="card-head"><h2>Services</h2><a class="small" href="#/system/services">Configure</a></div>
+      <div class="card-head"><h2>{t('Services')}</h2><a class="small" href="#/system/services">{t('Configure')}</a></div>
       <div class="svc-grid">
         {#each services as s (s.unit)}
           <div class="tile">
-            <div class="svc-name"><span class="dot" class:off={!s.active}></span>{shortName[s.unit] ?? s.label}</div>
-            <div class="muted small">{s.detail || (s.active ? 'Running' : 'Stopped')}</div>
+            <div class="svc-name"><span class="dot" class:off={!s.active}></span>{shortName[s.unit] ? t(shortName[s.unit]) : s.label}</div>
+            <div class="muted small">{s.detail || (s.active ? t('Running') : t('Stopped'))}</div>
           </div>
         {/each}
       </div>
     </section>
 
     <section class="card">
-      <div class="card-head"><h2>Data protection</h2><a class="small" href="#/backups">Manage</a></div>
+      <div class="card-head"><h2>{t('Data protection')}</h2><a class="small" href="#/backups">{t('Manage')}</a></div>
       <div class="list">
         {#each backups.slice(0, 4) as b (b.id)}
           <div class="row">
             <span class="prot-icon"><Icon name={b.target.kind === 'usb' ? 'usb' : 'refresh'} size={15} /></span>
-            <div class="grow"><div>{b.name}</div><div class="muted small">{b.lastRun.status ? ago(b.lastRun.started) + (b.lastRun.summary ? ' · ' + b.lastRun.summary : '') : 'Never ran'}</div></div>
+            <div class="grow"><div>{b.name}</div><div class="muted small">{b.lastRun.status ? ago(b.lastRun.started) + (b.lastRun.summary ? ' · ' + b.lastRun.summary : '') : t('Never ran')}</div></div>
             <span class="spacer"></span>
             <span class="badge {b.lastRun.status === 'done' ? 'good' : b.lastRun.status === 'failed' ? 'bad' : 'neutral'}">
-              {b.lastRun.status === 'done' ? 'OK' : b.lastRun.status === 'failed' ? 'Failed' : '—'}</span>
+              {b.lastRun.status === 'done' ? t('OK') : b.lastRun.status === 'failed' ? t('Failed') : '—'}</span>
           </div>
         {/each}
         {#each pools.filter((v) => v.level !== 'raid0') as v (v.device)}
           <div class="row">
             <span class="prot-icon"><Icon name="shield" size={15} /></span>
-            <div class="grow"><div>Volume check · {v.name}</div>
-              <div class="muted small">{v.lastSyncAction === 'check' || v.lastSyncAction === 'repair' ? `${v.mismatchCount} inconsistencies` : 'Not checked since start'}</div></div>
+            <div class="grow"><div>{t('Volume check · {name}', { name: v.name })}</div>
+              <div class="muted small">{v.lastSyncAction === 'check' || v.lastSyncAction === 'repair' ? t('{n} inconsistencies', { n: v.mismatchCount }) : t('Not checked since start')}</div></div>
             <span class="spacer"></span>
             <span class="badge {v.lastSyncAction === 'check' && v.mismatchCount === 0 ? 'good' : v.mismatchCount > 0 ? 'warn' : 'neutral'}">
-              {v.lastSyncAction === 'check' && v.mismatchCount === 0 ? 'OK' : v.mismatchCount > 0 ? 'Found issues' : '—'}</span>
+              {v.lastSyncAction === 'check' && v.mismatchCount === 0 ? t('OK') : v.mismatchCount > 0 ? t('Found issues') : '—'}</span>
           </div>
         {/each}
-        {#if !backups.length}<p class="muted small">No backup job yet. RAID isn't a backup: <a href="#/backups">set one up</a>.</p>{/if}
+        {#if !backups.length}<p class="muted small">{t('No backup job yet.')} {t("RAID isn't a backup:")} <a href="#/backups">{t('set one up')}</a>.</p>{/if}
       </div>
     </section>
 
     <section class="card">
-      <div class="card-head"><h2>Activity</h2><a class="small" href="#/system/events">View all</a></div>
+      <div class="card-head"><h2>{t('Activity')}</h2><a class="small" href="#/system/events">{t('View all')}</a></div>
       <ol class="activity">
         {#each events.slice(0, 5) as e, i (i)}
           <li><span class="dot {sevDot[e.severity]}" class:info={e.severity === 'info'}></span>
             <div><div class="small">{e.subject}</div><div class="muted small">{ago(e.time)}</div></div></li>
         {:else}
-          <li class="muted small">No events yet.</li>
+          <li class="muted small">{t('No events yet.')}</li>
         {/each}
       </ol>
     </section>

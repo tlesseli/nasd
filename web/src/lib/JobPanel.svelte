@@ -1,5 +1,6 @@
 <script>
   import { api } from '../api.js'
+  import { t, N_ } from '../i18n.svelte.js'
 
   // Shows a background job and its log, polling until it finishes.
   let { job, onFinished, onClose } = $props()
@@ -30,7 +31,7 @@
     if (logEl) logEl.scrollTop = logEl.scrollHeight
   })
 
-  const labels = { running: 'Running', done: 'Done', failed: 'Failed' }
+  const labels = { running: N_('Running'), done: N_('Done'), failed: N_('Failed') }
   const classes = { running: 'info', done: 'good', failed: 'bad' }
 </script>
 
@@ -38,13 +39,13 @@
   <section class="card job">
     <div class="job-head">
       <strong>{current.title}</strong>
-      <span class="badge {classes[current.status]}">{labels[current.status]}</span>
+      <span class="badge {classes[current.status]}">{labels[current.status] ? t(labels[current.status]) : labels[current.status]}</span>
       <span class="spacer"></span>
       {#if current.status !== 'running'}
-        <button class="link" onclick={onClose}>Close</button>
+        <button class="link" onclick={onClose}>{t('Close')}</button>
       {/if}
     </div>
     {#if current.error}<p class="error">{current.error}</p>{/if}
-    <pre bind:this={logEl}>{current.log?.join('\n') || 'Starting…'}</pre>
+    <pre bind:this={logEl}>{current.log?.join('\n') || t('Starting…')}</pre>
   </section>
 {/if}

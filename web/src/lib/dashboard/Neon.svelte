@@ -3,6 +3,7 @@
   import { onMount } from 'svelte'
   import { formatBytes } from '../../api.js'
   import { createDashboardData, pools, latest, memPercent, diskState, bays, uptimeParts, alarms } from './data.svelte.js'
+  import { t, N_ } from '../../i18n.svelte.js'
 
   let { user, onSessionLost } = $props()
   const { d, start } = createDashboardData(onSessionLost)
@@ -20,7 +21,7 @@
   const vol = $derived(pools(d.volumes).sort((a, b) => (b.totalBytes || b.sizeBytes) - (a.totalBytes || a.sizeBytes))[0])
   const vTotal = $derived(vol ? vol.totalBytes || vol.sizeBytes : 0)
   const vUsed = $derived(vol?.usedBytes ?? 0)
-  const levelText = { raid1: 'Mirror', raid5: 'Distributed parity', raid6: 'Double parity', raid10: 'Striped mirrors', raid0: 'Striped' }
+  const levelText = { raid1: N_('Mirror'), raid5: N_('Distributed parity'), raid6: N_('Double parity'), raid10: N_('Striped mirrors'), raid0: N_('Striped') }
   const layers = $derived(Math.max(2, vol?.members.length ?? 4))
 
   // ---- rings
@@ -47,27 +48,27 @@
   <header class="top">
     <div class="brand">
       <svg viewBox="0 0 40 40" class="logo" aria-hidden="true"><path d="M20 2 36 11v18L20 38 4 29V11z" /><path d="M12 15v10l8 5 8-5V15l-8-5z" /></svg>
-      <div><div class="name">{(d.sys?.hostname ?? 'nas').toUpperCase()}</div><div class="tagline">Network · Storage · {d.sys?.version ? 'nasd ' + d.sys.version.split('+')[0] : ''}</div></div>
+      <div><div class="name">{(d.sys?.hostname ?? 'nas').toUpperCase()}</div><div class="tagline">{t('Network · Storage')} · {d.sys?.version ? 'nasd ' + d.sys.version.split('+')[0] : ''}</div></div>
     </div>
-    <div class="glass status"><span class="dot" class:bad={!healthy}></span><div><div class="cap">System status</div><div class="big">{d.error ? 'OFFLINE' : healthy ? 'ONLINE' : 'ATTENTION'}</div></div></div>
+    <div class="glass status"><span class="dot" class:bad={!healthy}></span><div><div class="cap">{t('System status')}</div><div class="big">{d.error ? t('OFFLINE') : healthy ? t('ONLINE') : t('ATTENTION')}</div></div></div>
     <div class="glass meta">
-      <div><div class="cap">Uptime</div><div class="val">{up.d}d {String(up.h).padStart(2, '0')}h {String(up.m).padStart(2, '0')}m</div></div>
-      <div><div class="cap">Signed in</div><div class="val">{user ?? 'admin'}@{d.sys?.hostname ?? 'nas'}.local</div></div>
+      <div><div class="cap">{t('Uptime')}</div><div class="val">{up.d}d {String(up.h).padStart(2, '0')}h {String(up.m).padStart(2, '0')}m</div></div>
+      <div><div class="cap">{t('Signed in')}</div><div class="val">{user ?? 'admin'}@{d.sys?.hostname ?? 'nas'}.local</div></div>
     </div>
   </header>
 
   <div class="grid">
     <section class="glass cpu">
-      <h3>CPU usage</h3>
+      <h3>{t('CPU usage')}</h3>
       <svg viewBox="0 0 140 140" class="ring" role="img" aria-label="CPU {cpu}%">
         <circle cx="70" cy="70" r="52" class="track" /><circle cx="70" cy="70" r="52" class="arc cyan" stroke-dasharray={ring(cpu)} />
-        <text x="70" y="70" class="pct">{cpu}%</text><text x="70" y="90" class="sub">utilization</text>
+        <text x="70" y="70" class="pct">{cpu}%</text><text x="70" y="90" class="sub">{t('utilization')}</text>
       </svg>
-      <div class="stats"><div><span>Cores</span>{d.sys?.cores ?? '—'}</div><div><span>Load 1 min</span>{d.sys?.load?.[0]?.toFixed(2) ?? '—'}</div><div><span>CPU</span>{(d.sys?.cpu ?? '').replace(/Intel\(R\) |CPU |\(TM\)/g, '').split('@')[0] || '—'}</div></div>
+      <div class="stats"><div><span>{t('Cores')}</span>{d.sys?.cores ?? '—'}</div><div><span>{t('Load 1 min')}</span>{d.sys?.load?.[0]?.toFixed(2) ?? '—'}</div><div><span>CPU</span>{(d.sys?.cpu ?? '').replace(/Intel\(R\) |CPU |\(TM\)/g, '').split('@')[0] || '—'}</div></div>
     </section>
 
     <section class="glass array">
-      <h3>RAID array overview</h3>
+      <h3>{t('RAID array overview')}</h3>
       <svg viewBox="0 0 300 230" class="stack" aria-hidden="true">
         <defs><linearGradient id="nlayer" x1="0" x2="1"><stop offset="0" stop-color="#36d1ff" stop-opacity=".35" /><stop offset="1" stop-color="#b56cff" stop-opacity=".35" /></linearGradient></defs>
         <ellipse cx="150" cy="200" rx="120" ry="22" class="halo" /><ellipse cx="150" cy="200" rx="85" ry="15" class="halo" />
@@ -81,62 +82,62 @@
         {/each}
       </svg>
       {#if vol}
-        <div class="level">{vol.level.replace('raid', 'RAID ')} <span>|</span> {levelText[vol.level] ?? ''}</div>
+        <div class="level">{vol.level.replace('raid', 'RAID ')} <span>|</span> {levelText[vol.level] ? t(levelText[vol.level]) : ''}</div>
         <div class="trio">
-          {#each [['Used', vUsed, vTotal ? (100 * vUsed) / vTotal : 0], ['Total', vTotal, 100], ['Free', vTotal - vUsed, vTotal ? (100 * (vTotal - vUsed)) / vTotal : 0]] as [label, bytes, pct]}
+          {#each [[N_('Used'), vUsed, vTotal ? (100 * vUsed) / vTotal : 0], [N_('Total'), vTotal, 100], [N_('Free'), vTotal - vUsed, vTotal ? (100 * (vTotal - vUsed)) / vTotal : 0]] as [label, bytes, pct]}
             <figure>
               <svg viewBox="0 0 76 76" class="mini"><circle cx="38" cy="38" r="30" class="track" /><circle cx="38" cy="38" r="30" class="arc" class:violet={label === 'Free'} stroke-dasharray={small(pct)} />
                 <text x="38" y="42" class="mv">{formatBytes(bytes).replace(' ', ' ')}</text></svg>
-              <figcaption>{label} {label === 'Total' ? 'capacity' : ''}<br /><span>{Math.round(pct)}%</span></figcaption>
+              <figcaption>{label === 'Total' ? t('Total capacity') : t(label)}<br /><span>{Math.round(pct)}%</span></figcaption>
             </figure>
           {/each}
         </div>
-        <div class="health"><span class:bad={!healthy}>Array health · {vol.status === 'healthy' ? 'optimal' : vol.status}</span>
-          <small>{healthy ? 'All systems operational' : d.problems[0]?.subject ?? 'Needs attention'}</small></div>
-      {:else}<p class="muted">No volume yet.</p>{/if}
+        <div class="health"><span class:bad={!healthy}>{t('Array health')} · {vol.status === 'healthy' ? t('optimal') : vol.status}</span>
+          <small>{healthy ? t('All systems operational') : d.problems[0]?.subject ?? t('Needs attention')}</small></div>
+      {:else}<p class="muted">{t('No volume yet.')}</p>{/if}
     </section>
 
     <section class="glass net">
-      <h3>Network throughput <small>last hour</small></h3>
-      <div class="rates"><div><span class="cap">In</span><b class="cyan-t">{rate(m?.netRx)} ↑</b></div><div><span class="cap">Out</span><b class="violet-t">{rate(m?.netTx)} ↑</b></div></div>
-      <svg viewBox="0 0 {W} {H}" class="chart" role="img" aria-label="Network in {rate(m?.netRx)}, out {rate(m?.netTx)}">
+      <h3>{t('Network throughput')} <small>{t('last hour')}</small></h3>
+      <div class="rates"><div><span class="cap">{t('In')}</span><b class="cyan-t">{rate(m?.netRx)} ↑</b></div><div><span class="cap">{t('Out')}</span><b class="violet-t">{rate(m?.netTx)} ↑</b></div></div>
+      <svg viewBox="0 0 {W} {H}" class="chart" role="img" aria-label={t('Network in {rx}, out {tx}', { rx: rate(m?.netRx), tx: rate(m?.netTx) })}>
         {#each [0.25, 0.5, 0.75] as f}<line x1="0" x2={W} y1={H * f} y2={H * f} class="gridl" />{/each}
         <path d={line('netRx')} class="l cyan" /><path d={line('netTx')} class="l violet" />
       </svg>
-      <div class="legend"><span><i class="cyan-b"></i>Inbound</span><span><i class="violet-b"></i>Outbound</span><span class="muted">peak {rate(peak)}</span></div>
+      <div class="legend"><span><i class="cyan-b"></i>{t('Inbound')}</span><span><i class="violet-b"></i>{t('Outbound')}</span><span class="muted">{t('peak {rate}', { rate: rate(peak) })}</span></div>
     </section>
 
     <section class="glass mem">
-      <h3>Memory usage</h3>
-      <svg viewBox="0 0 140 140" class="ring" role="img" aria-label="Memory {mem}%">
+      <h3>{t('Memory usage')}</h3>
+      <svg viewBox="0 0 140 140" class="ring" role="img" aria-label={t('Memory {percent}%', { percent: mem })}>
         <circle cx="70" cy="70" r="52" class="track" /><circle cx="70" cy="70" r="52" class="arc violet" stroke-dasharray={ring(mem)} />
-        <text x="70" y="70" class="pct">{mem}%</text><text x="70" y="90" class="sub">utilization</text>
+        <text x="70" y="70" class="pct">{mem}%</text><text x="70" y="90" class="sub">{t('utilization')}</text>
       </svg>
-      <div class="stats"><div><span>Used</span>{formatBytes(memUsed)}</div><div><span>Total</span>{formatBytes(d.sys?.memTotalBytes ?? 0)}</div><div><span>Available</span>{formatBytes(d.sys?.memAvailableBytes ?? 0)}</div></div>
+      <div class="stats"><div><span>{t('Used')}</span>{formatBytes(memUsed)}</div><div><span>{t('Total')}</span>{formatBytes(d.sys?.memTotalBytes ?? 0)}</div><div><span>{t('Available')}</span>{formatBytes(d.sys?.memAvailableBytes ?? 0)}</div></div>
     </section>
 
     <section class="glass disks">
-      <h3>Disk health <small>{d.disks.filter((x) => x.bay).length} disks{vol ? ` · ${vol.level.replace('raid', 'RAID ')}` : ''}</small></h3>
+      <h3>{t('Disk health')} <small>{d.disks.filter((x) => x.bay).length === 1 ? t('{n} disk', { n: 1 }) : t('{n} disks', { n: d.disks.filter((x) => x.bay).length })}{vol ? ` · ${vol.level.replace('raid', 'RAID ')}` : ''}</small></h3>
       <div class="hexes">
         {#each bayList as b (b.n)}
           {@const st = diskState(b.disk)}
           <a class="hex" class:bad={st === 'fault'} class:warn={st === 'warn'} class:empty={st === 'empty'} href="#/volumes">
-            <span class="hn">Disk {String(b.n).padStart(2, '0')}</span>
-            <span class="ht">{b.disk?.health?.temperatureC ? `${b.disk.health.temperatureC}°C` : st === 'empty' ? 'empty' : '—'}
+            <span class="hn">{t('Disk {n}', { n: String(b.n).padStart(2, '0') })}</span>
+            <span class="ht">{b.disk?.health?.temperatureC ? `${b.disk.health.temperatureC}°C` : st === 'empty' ? t('empty') : '—'}
               {#if st === 'ok'}<b class="ok">✓</b>{:else if st === 'fault' || st === 'warn'}<b class="ko">!</b>{/if}</span>
           </a>
         {/each}
       </div>
-      <div class="foot"><span>SMART status · {al.diskFault ? 'attention' : 'healthy'}</span><span>{al.diskFault ? 'Check the disks' : 'All disks operational'}</span></div>
+      <div class="foot"><span>{t('SMART status')} · {al.diskFault ? t('attention') : t('healthy')}</span><span>{al.diskFault ? t('Check the disks') : t('All disks operational')}</span></div>
     </section>
   </div>
 
   <nav class="dock glass">
-    {#each [['#/volumes', 'Storage', 'M4 6h16v4H4zM4 14h16v4H4z'], ['#/shares', 'Shares', 'M7 12a3 3 0 1 0 0-.01M17 6a3 3 0 1 0 0-.01M17 18a3 3 0 1 0 0-.01M9.7 10.6l4.6-3.2M9.7 13.4l4.6 3.2'],
-      ['#/users', 'Users', 'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20c0-3 3-5 6-5s6 2 6 5M16 11a3 3 0 1 0 0-6M21 20c0-2.5-1.5-4.3-4-4.9'],
-      ['#/backups', 'Backup', 'M7 18a5 5 0 1 1 1-9.9A6 6 0 0 1 19 10a4 4 0 0 1-1 8zM12 16V10M9.5 12.5 12 10l2.5 2.5'],
-      ['#/system/restart', 'Power', 'M12 3v8M6.3 6.3a8 8 0 1 0 11.4 0'], ['#/system', 'Settings', 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 13a7.5 7.5 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-1.7-1L15 3.5h-4l-.4 2.5a7 7 0 0 0-1.7 1l-2.4-1-2 3.4L6.6 11a7.5 7.5 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7 7 0 0 0 1.7-1l2.4 1 2-3.4z']] as [href, label, icon]}
-      <a {href}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={icon} /></svg>{label}</a>
+    {#each [['#/volumes', N_('Storage'), 'M4 6h16v4H4zM4 14h16v4H4z'], ['#/shares', N_('Shares'), 'M7 12a3 3 0 1 0 0-.01M17 6a3 3 0 1 0 0-.01M17 18a3 3 0 1 0 0-.01M9.7 10.6l4.6-3.2M9.7 13.4l4.6 3.2'],
+      ['#/users', N_('Users'), 'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20c0-3 3-5 6-5s6 2 6 5M16 11a3 3 0 1 0 0-6M21 20c0-2.5-1.5-4.3-4-4.9'],
+      ['#/backups', N_('Backup'), 'M7 18a5 5 0 1 1 1-9.9A6 6 0 0 1 19 10a4 4 0 0 1-1 8zM12 16V10M9.5 12.5 12 10l2.5 2.5'],
+      ['#/system/restart', N_('Power'), 'M12 3v8M6.3 6.3a8 8 0 1 0 11.4 0'], ['#/system', N_('Settings'), 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 13a7.5 7.5 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-1.7-1L15 3.5h-4l-.4 2.5a7 7 0 0 0-1.7 1l-2.4-1-2 3.4L6.6 11a7.5 7.5 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7 7 0 0 0 1.7-1l2.4 1 2-3.4z']] as [href, label, icon]}
+      <a {href}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={icon} /></svg>{t(label)}</a>
     {/each}
   </nav>
 </div>

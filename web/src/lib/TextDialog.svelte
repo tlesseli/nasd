@@ -1,4 +1,6 @@
 <script>
+  import { t } from '../i18n.svelte.js'
+
   // A modal that shows a long text (e.g. a SMART report).
   let { title, text, onClose } = $props()
 </script>
@@ -10,7 +12,7 @@
     <div class="job-head">
       <h2 id="text-dialog-title">{title}</h2>
       <span class="spacer"></span>
-      <button class="link" onclick={onClose}>Close</button>
+      <button class="link" onclick={onClose}>{t('Close')}</button>
     </div>
     <pre class="logs">{text}</pre>
   </div>

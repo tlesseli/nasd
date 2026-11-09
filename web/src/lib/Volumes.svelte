@@ -7,6 +7,7 @@
   import VolumeMaintenance from './VolumeMaintenance.svelte'
   import TextDialog from './TextDialog.svelte'
   import Icon from '../ui/Icon.svelte'
+  import { t, N_ } from '../i18n.svelte.js'
 
   let { onSessionLost, params = {} } = $props()
 
@@ -66,10 +67,10 @@
       if (what === 'unlocate') await api.post(`/api/disks/${d.name}/locate/stop`)
       if (what === 'selftest') {
         await api.post(`/api/disks/${d.name}/selftest`)
-        notice = `SMART short test started on ${d.name}: about 2 minutes, run by the disk itself. The result shows in its SMART report.`
+        notice = t('SMART short test started on {disk}: about 2 minutes, run by the disk itself. The result shows in its SMART report.', { disk: d.name })
       }
       if (what === 'smart') {
-        smart = { title: `SMART report: ${d.name} (${d.model})`, text: 'Loading…' }
+        smart = { title: t('SMART report: {disk} ({model})', { disk: d.name, model: d.model }), text: t('Loading…') }
         smart.text = (await api.get(`/api/disks/${d.name}/smart`)).report
       }
       locating = (await api.get('/api/hardware')).locating
@@ -107,8 +108,13 @@
     healthy: 'good', syncing: 'info', rebuilding: 'info', checking: 'info', reshaping: 'info',
     degraded: 'warn', failed: 'bad', inactive: 'bad',
   }
-  const syncLabel = { resync: 'Initial sync', recover: 'Rebuilding', check: 'Checking', repair: 'Repairing', reshape: 'Reshaping' }
-  const levelLabel = (l) => l?.replace('raid', 'RAID ') || 'unknown'
+  const syncLabel = { resync: N_('Initial sync'), recover: N_('Rebuilding'), check: N_('Checking'), repair: N_('Repairing'), reshape: N_('Reshaping') }
+  const syncText = (a) => (syncLabel[a] ? t(syncLabel[a]) : a)
+  const statusLabel = {
+    healthy: N_('Healthy'), syncing: N_('Syncing'), rebuilding: N_('Rebuilding'), checking: N_('Checking'), reshaping: N_('Reshaping'),
+    degraded: N_('Degraded'), failed: N_('Failed'), inactive: N_('Inactive'),
+  }
+  const levelLabel = (l) => l?.replace('raid', 'RAID ') || t('unknown')
 
   // A spare with a slot is being rebuilt into a missing position, so it is
   // not "missing". (A brand-new RAID5 is built that way by mdadm.)
@@ -116,18 +122,18 @@
   const missing = (v) => Math.max(0, v.degraded - rebuilding(v))
 
   function memberLabel(m) {
-    if (m.state.includes('faulty')) return { cls: 'bad', text: 'Failed' }
-    if (m.state.includes('spare')) return { cls: 'neutral', text: m.slot >= 0 ? 'Rebuilding' : 'Spare' }
-    if (m.state.includes('in_sync')) return { cls: 'good', text: 'OK' }
+    if (m.state.includes('faulty')) return { cls: 'bad', text: t('Failed') }
+    if (m.state.includes('spare')) return { cls: 'neutral', text: m.slot >= 0 ? t('Rebuilding') : t('Spare') }
+    if (m.state.includes('in_sync')) return { cls: 'good', text: t('OK') }
     return { cls: 'neutral', text: m.state }
   }
 
   function askDelete(v) {
     dialog = {
-      title: `Delete volume ${v.name}?`,
-      message: `This unmounts ${v.mountpoint || 'the volume'}, destroys the RAID and erases ${v.members.map((m) => m.disk).join(', ')}. All files on it are lost.`,
+      title: t('Delete volume {name}?', { name: v.name }),
+      message: t('This unmounts {path}, destroys the RAID and erases {disks}. All files on it are lost.', { path: v.mountpoint || t('the volume'), disks: v.members.map((m) => m.disk).join(', ') }),
       expected: v.name,
-      confirmLabel: 'Delete volume',
+      confirmLabel: t('Delete volume'),
       onConfirm: () => startJob(`/api/volumes/${encodeURIComponent(v.name)}/delete`, { confirm: v.name }),
     }
   }
@@ -135,23 +141,23 @@
   function askRemove(v, m) {
     const failed = m.state.includes('faulty')
     dialog = {
-      title: `Remove ${m.disk} from ${v.name}?`,
+      title: t('Remove {disk} from {name}?', { disk: m.disk, name: v.name }),
       message: failed
-        ? `${m.disk} has failed. Removing it lets you replace it with a new disk.`
+        ? t('{disk} has failed. Removing it lets you replace it with a new disk.', { disk: m.disk })
         : m.state.includes('spare')
-          ? `${m.disk} is a spare; the volume won't be affected.`
-          : `${m.disk} will be marked as failed and taken out. ${v.name} keeps working but becomes degraded until you add a replacement disk.`,
-      confirmLabel: 'Remove disk',
+          ? t("{disk} is a spare; the volume won't be affected.", { disk: m.disk })
+          : t('{disk} will be marked as failed and taken out. {name} keeps working but becomes degraded until you add a replacement disk.', { disk: m.disk, name: v.name }),
+      confirmLabel: t('Remove disk'),
       onConfirm: () => startJob(`/api/volumes/${encodeURIComponent(v.name)}/remove`, { disk: m.disk }),
     }
   }
 
   function askErase(d) {
     dialog = {
-      title: `Erase ${d.name}?`,
-      message: `Removes every partition, RAID signature and filesystem from ${d.name} (${d.model}, ${formatBytes(d.sizeBytes)}). Anything on it is lost.`,
+      title: t('Erase {disk}?', { disk: d.name }),
+      message: t('Removes every partition, RAID signature and filesystem from {disk} ({model}, {size}). Anything on it is lost.', { disk: d.name, model: d.model, size: formatBytes(d.sizeBytes) }),
       expected: d.name,
-      confirmLabel: 'Erase disk',
+      confirmLabel: t('Erase disk'),
       onConfirm: () => startJob(`/api/disks/${d.name}/erase`, { confirm: d.name }),
     }
   }
@@ -170,8 +176,8 @@
   const spares = (v) => v.members.filter((m) => m.state.includes('spare') && m.slot < 0)
   // Disks that can be added to / used to expand a volume: free disks, plus its idle spares.
   const candidates = (v) => [
-    ...spares(v).map((m) => ({ name: m.disk, label: `${m.disk} · current hot spare` })),
-    ...freeDisks.map((d) => ({ name: d.name, label: `${d.name} · ${formatBytes(d.sizeBytes)} · free` })),
+    ...spares(v).map((m) => ({ name: m.disk, label: t('{disk} · current hot spare', { disk: m.disk }) })),
+    ...freeDisks.map((d) => ({ name: d.name, label: t('{disk} · {size} · free', { disk: d.name, size: formatBytes(d.sizeBytes) }) })),
   ]
   const parity = { raid5: 1, raid6: 2 }
   const canExpand = (v) => v.level in parity && v.status === 'healthy'
@@ -181,11 +187,11 @@
     const n = v.raidDisks
     const newSize = (v.sizeBytes / (n - p)) * (n + 1 - p)
     dialog = {
-      title: `Expand ${v.name} with ${disk}?`,
-      message: `${v.name} goes from ${n} to ${n + 1} disks and from ${formatBytes(v.sizeBytes)} to about ${formatBytes(newSize)}. ` +
-        `The data is reshaped across all disks: this takes a long time (hours with large disks). ` +
-        `The volume stays usable and protected meanwhile, but avoid restarting the NAS. Other disk operations wait until it's done.`,
-      confirmLabel: 'Expand volume',
+      title: t('Expand {name} with {disk}?', { name: v.name, disk }),
+      message: t('{name} goes from {from} to {to} disks and from {oldsize} to about {newsize}.', { name: v.name, from: n, to: n + 1, oldsize: formatBytes(v.sizeBytes), newsize: formatBytes(newSize) }) + ' ' +
+        t('The data is reshaped across all disks: this takes a long time (hours with large disks).') + ' ' +
+        t("The volume stays usable and protected meanwhile, but avoid restarting the NAS. Other disk operations wait until it's done."),
+      confirmLabel: t('Expand volume'),
       danger: false,
       onConfirm: () => startJob(`/api/volumes/${v.name}/expand`, { disk }),
     }
@@ -201,40 +207,40 @@
     return v.sizeBytes / Math.max(1, data)
   }
   const survives = (v) => {
-    const t = tolerates[v.level]
-    const n = typeof t === 'function' ? t(v.raidDisks) : t ?? 0
-    return n === 0 ? 'none' : `${n} disk${n > 1 ? 's' : ''}`
+    const tol = tolerates[v.level]
+    const n = typeof tol === 'function' ? tol(v.raidDisks) : tol ?? 0
+    return n === 0 ? t('none') : n > 1 ? t('{n} disks', { n }) : t('{n} disk', { n })
   }
   const SEGMENTS = 24
   const lastCheck = (v) => {
     const m = maint[v.name]
     if (m?.lastCheck) return new Date(m.lastCheck).toLocaleDateString([], { day: 'numeric', month: 'short' })
-    return v.level === 'raid0' ? 'n/a' : 'never'
+    return v.level === 'raid0' ? t('n/a') : t('never')
   }
   const physical = $derived([...disks].filter((d) => d.role !== 'usb')
     .sort((a, b) => (a.bay || 99) - (b.bay || 99) || a.name.localeCompare(b.name)))
   function health(d) {
     const h = d.health
-    if (d.role === 'system') return { cls: 'neutral', text: 'System disk' }
-    if (h?.standby) return { cls: 'neutral', text: 'Asleep' }
-    if (!h || !h.supported) return { cls: 'neutral', text: 'No SMART' }
-    if (!h.passed) return { cls: 'bad', text: 'Failing' }
+    if (d.role === 'system') return { cls: 'neutral', text: t('System disk') }
+    if (h?.standby) return { cls: 'neutral', text: t('Asleep') }
+    if (!h || !h.supported) return { cls: 'neutral', text: t('No SMART') }
+    if (!h.passed) return { cls: 'bad', text: t('Failing') }
     const bad = h.reallocatedSectors + h.pendingSectors + h.uncorrectableSectors
-    if (bad > 0) return { cls: 'warn', text: `${bad} bad sectors` }
-    return { cls: 'good', text: 'Passed' }
+    if (bad > 0) return { cls: 'warn', text: t('{n} bad sectors', { n: bad }) }
+    return { cls: 'good', text: t('Passed') }
   }
 </script>
 
 <main class="page">
   <div class="page-head">
     <div>
-      <div class="eyebrow">{pools.length} volume{pools.length === 1 ? '' : 's'} · {physical.filter((d) => d.role === 'data').length} data disks</div>
-      <h1>Volumes &amp; Disks</h1>
+      <div class="eyebrow">{pools.length === 1 ? t('{n} volume', { n: pools.length }) : t('{n} volumes', { n: pools.length })} · {t('{n} data disks', { n: physical.filter((d) => d.role === 'data').length })}</div>
+      <h1>{t('Volumes & Disks')}</h1>
     </div>
     <div class="actions">
       {#if !creating}
         <button onclick={() => (creating = true)} disabled={busy || !freeDisks.length}
-          title={freeDisks.length ? '' : 'No free disks'}>Create volume</button>
+          title={freeDisks.length ? '' : t('No free disks')}>{t('Create volume')}</button>
       {/if}
     </div>
   </div>
@@ -257,37 +263,37 @@
               <span class="dot" class:warn={statusClass[v.status] === 'warn'} class:bad={statusClass[v.status] === 'bad'}></span>
               <span class="mono pool-name">{v.name}</span>
               <span class="spacer"></span>
-              {#if !v.managed && !v.mountpoint}<span class="badge neutral">Found</span>{/if}
-              <span class="badge {statusClass[v.status] ?? 'neutral'}">{v.status[0].toUpperCase() + v.status.slice(1)}</span>
+              {#if !v.managed && !v.mountpoint}<span class="badge neutral">{t('Found')}</span>{/if}
+              <span class="badge {statusClass[v.status] ?? 'neutral'}">{statusLabel[v.status] ? t(statusLabel[v.status]) : v.status[0].toUpperCase() + v.status.slice(1)}</span>
             </div>
-            <div class="muted small">{levelLabel(v.level)} · {v.raidDisks} × {formatBytes(perDisk(v))} · {v.filesystem || 'no filesystem'}</div>
+            <div class="muted small">{levelLabel(v.level)} · {v.raidDisks} × {formatBytes(perDisk(v))} · {v.filesystem || t('no filesystem')}</div>
             <div class="pool-usage">
               {#if v.mountpoint}
-                <span class="big">{formatBytes(v.usedBytes)} <span class="muted small">used</span></span>
-                <span class="muted small">{formatBytes(v.availBytes)} free · {formatBytes(v.totalBytes || v.sizeBytes)}</span>
+                <span class="big">{formatBytes(v.usedBytes)} <span class="muted small">{t('used')}</span></span>
+                <span class="muted small">{t('{size} free', { size: formatBytes(v.availBytes) })} · {formatBytes(v.totalBytes || v.sizeBytes)}</span>
               {:else}
                 <span class="big">{formatBytes(v.sizeBytes)}</span>
-                <span class="muted small">not mounted</span>
+                <span class="muted small">{t('not mounted')}</span>
               {/if}
             </div>
-            <div class="segbar" aria-label="{Math.round(pct)}% used">
+            <div class="segbar" aria-label={t('{pct}% used', { pct: Math.round(pct) })}>
               {#each Array(SEGMENTS) as _, i}<span class:on={i < Math.round((pct / 100) * SEGMENTS)} class:warn={pct >= 90}></span>{/each}
             </div>
             {#if v.sync}
-              <div class="small">{syncLabel[v.sync.action] ?? v.sync.action} {v.sync.percent.toFixed(1)}%{v.sync.etaSeconds ? ` · ${formatDuration(v.sync.etaSeconds)} left` : ''}</div>
+              <div class="small">{syncText(v.sync.action)} {v.sync.percent.toFixed(1)}%{v.sync.etaSeconds ? ' · ' + t('{time} left', { time: formatDuration(v.sync.etaSeconds) }) : ''}</div>
             {/if}
             <div class="grid cols-4 tiles">
-              <div class="tile"><div class="label">Survives</div><div class="value">{survives(v)}</div></div>
-              <div class="tile"><div class="label">Filesystem</div><div class="value">{v.filesystem || '—'}</div></div>
-              <div class="tile"><div class="label">Quotas</div><div class="value">{v.quotas ? 'on' : 'off'}</div></div>
-              <div class="tile"><div class="label">Last check</div><div class="value">{lastCheck(v)}</div></div>
+              <div class="tile"><div class="label">{t('Survives')}</div><div class="value">{survives(v)}</div></div>
+              <div class="tile"><div class="label">{t('Filesystem')}</div><div class="value">{v.filesystem || '—'}</div></div>
+              <div class="tile"><div class="label">{t('Quotas')}</div><div class="value">{v.quotas ? t('on') : t('off')}</div></div>
+              <div class="tile"><div class="label">{t('Last check')}</div><div class="value">{lastCheck(v)}</div></div>
             </div>
           </button>
         {:else}
           {#if loaded && !creating}
             <div class="card empty span-2">
-              <p><strong>No volumes yet.</strong></p>
-              <p class="muted">A volume combines disks into one RAID-protected space. Create one to start storing files.</p>
+              <p><strong>{t('No volumes yet.')}</strong></p>
+              <p class="muted">{t('A volume combines disks into one RAID-protected space. Create one to start storing files.')}</p>
             </div>
           {/if}
         {/each}
@@ -296,115 +302,115 @@
         <div class="card system-line">
           <Icon name="server" size={16} />
           <div>
-            <strong>System</strong>
-            <span class="muted small">· on every data disk, managed with the volumes</span>
+            <strong>{t('System')}</strong>
+            <span class="muted small">· {t('on every data disk, managed with the volumes')}</span>
             <div class="small">
-              {#each systemArrays as v, i (v.device)}{i ? ' · ' : ''}{v.system === 'root' ? 'Operating system' : 'Swap'}: {levelLabel(v.level)}, {v.level === 'raid1' ? `${v.members.length} copies` : `${v.members.length} disks`} —
-                <span class="badge {statusClass[v.status] ?? 'neutral'}">{v.status}</span>{#if v.sync} {syncLabel[v.sync.action] ?? v.sync.action} {v.sync.percent.toFixed(0)}%{/if}{/each}
+              {#each systemArrays as v, i (v.device)}{i ? ' · ' : ''}{v.system === 'root' ? t('Operating system') : t('Swap')}: {levelLabel(v.level)}, {v.level === 'raid1' ? t('{n} copies', { n: v.members.length }) : t('{n} disks', { n: v.members.length })} —
+                <span class="badge {statusClass[v.status] ?? 'neutral'}">{v.status}</span>{#if v.sync} {syncText(v.sync.action)} {v.sync.percent.toFixed(0)}%{/if}{/each}
             </div>
           </div>
         </div>
       {/if}
 
       <section class="card table-card">
-        <div class="card-head"><h2>Physical disks</h2></div>
+        <div class="card-head"><h2>{t('Physical disks')}</h2></div>
         <table class="data">
-          <thead><tr><th>Slot</th><th>Model</th><th class="opt">Serial</th><th>Size</th><th>Volume</th><th>Temp</th><th class="opt">Power-on</th><th>Health</th><th></th></tr></thead>
+          <thead><tr><th>{t('Slot')}</th><th>{t('Model')}</th><th class="opt">{t('Serial')}</th><th>{t('Size')}</th><th>{t('Volume')}</th><th>{t('Temp')}</th><th class="opt">{t('Power-on')}</th><th>{t('Health')}</th><th></th></tr></thead>
           <tbody>
             {#each physical as d (d.name)}
               {@const h = health(d)}
               {@const dirty = d.role === 'data' && !memberOf[d.name] && (d.usage || d.partitions?.length)}
               <tr class:highlight={h.cls === 'warn' || h.cls === 'bad' || params.disk === d.name}>
                 <td><span class="dot" class:warn={h.cls === 'warn'} class:bad={h.cls === 'bad'} class:off={h.cls === 'neutral'}></span>
-                  {d.role === 'system' ? 'System' : d.bay ? `Bay ${d.bay}` : d.name} <span class="muted small">{d.name}</span></td>
+                  {d.role === 'system' ? t('System') : d.bay ? t('Bay {n}', { n: d.bay }) : d.name} <span class="muted small">{d.name}</span></td>
                 <td>{d.model || '—'}</td>
                 <td class="mono small opt">{d.serial || '—'}</td>
                 <td>{formatBytes(d.sizeBytes)}</td>
-                <td class="mono">{memberOf[d.name] ?? (dirty ? 'old data' : d.role === 'data' ? 'free' : '—')}</td>
+                <td class="mono">{memberOf[d.name] ?? (dirty ? t('old data') : d.role === 'data' ? t('free') : '—')}</td>
                 <td>{d.health?.temperatureC ? `${d.health.temperatureC} °C` : '—'}</td>
                 <td class="opt">{d.health?.powerOnHours ? `${d.health.powerOnHours.toLocaleString()} h` : '—'}</td>
                 <td><span class="badge {h.cls}">{h.text}</span>
-                  {#if locating.includes(d.name)}<span class="badge info blink">Blinking</span>{/if}</td>
+                  {#if locating.includes(d.name)}<span class="badge info blink">{t('Blinking')}</span>{/if}</td>
                 <td class="right row-actions">
                   {#if d.role === 'data'}
                     {#if locating.includes(d.name)}
-                      <button class="link" onclick={() => diskAction(d, 'unlocate')}>Stop</button>
+                      <button class="link" onclick={() => diskAction(d, 'unlocate')}>{t('Stop')}</button>
                     {:else}
-                      <button class="link" onclick={() => diskAction(d, 'locate')} title="Blink the bay light for 60 s">Locate</button>
+                      <button class="link" onclick={() => diskAction(d, 'locate')} title={t('Blink the bay light for 60 s')}>{t('Locate')}</button>
                     {/if}
                   {/if}
                   {#if d.health?.supported}
                     <button class="link" onclick={() => diskAction(d, 'smart')}>SMART</button>
-                    <button class="link" onclick={() => diskAction(d, 'selftest')} title="SMART short self-test (2 min)">Test</button>
+                    <button class="link" onclick={() => diskAction(d, 'selftest')} title={t('SMART short self-test (2 min)')}>{t('Test')}</button>
                   {/if}
-                  {#if dirty}<button class="link danger-text" onclick={() => askErase(d)} disabled={busy}>Erase</button>{/if}
+                  {#if dirty}<button class="link danger-text" onclick={() => askErase(d)} disabled={busy}>{t('Erase')}</button>{/if}
                 </td>
               </tr>
             {/each}
           </tbody>
         </table>
         {#if dirtyDisks.length}
-          <p class="hint table-note">“Old data”: partitions or RAID signatures from a previous life (e.g. the original ReadyNAS OS). Erase them to use the disk.</p>
+          <p class="hint table-note">{t('“Old data”: partitions or RAID signatures from a previous life (e.g. the original ReadyNAS OS). Erase them to use the disk.')}</p>
         {/if}
       </section>
     </div>
 
     {#if sel}
       {@const v = sel}
-      <aside class="card panel" aria-label="Volume {v.name}">
+      <aside class="card panel" aria-label={t('Volume {name}', { name: v.name })}>
         <div class="panel-head">
           <div><h2 class="mono">{v.name}</h2><div class="muted small">{levelLabel(v.level)} · {v.device}{v.mountpoint ? ` · ${v.mountpoint}` : ''}</div></div>
           <span class="spacer"></span>
-          <button class="icon-btn" onclick={() => (selected = null)} aria-label="Close"><Icon name="x" size={16} /></button>
+          <button class="icon-btn" onclick={() => (selected = null)} aria-label={t('Close')}><Icon name="x" size={16} /></button>
         </div>
 
         {#if v.sync}
           <div class="sync">
-            <span>{syncLabel[v.sync.action] ?? v.sync.action}: <strong>{v.sync.percent.toFixed(1)}%</strong>
-              {#if v.sync.speedKBs}<span class="muted">· {formatBytes(v.sync.speedKBs * 1024)}/s · about {formatDuration(v.sync.etaSeconds)} left</span>{/if}
+            <span>{syncText(v.sync.action)}: <strong>{v.sync.percent.toFixed(1)}%</strong>
+              {#if v.sync.speedKBs}<span class="muted">· {formatBytes(v.sync.speedKBs * 1024)}/s · {t('about {time} left', { time: formatDuration(v.sync.etaSeconds) })}</span>{/if}
             </span>
             <span class="meter"><span style="width: {v.sync.percent}%"></span></span>
-            {#if v.sync.action === 'resync'}<span class="muted small">The volume is usable during the initial sync, just slower.</span>{/if}
+            {#if v.sync.action === 'resync'}<span class="muted small">{t('The volume is usable during the initial sync, just slower.')}</span>{/if}
           </div>
         {/if}
         {#if v.status === 'degraded' && missing(v) > 0}
-          <p class="warn-box">A disk is missing: the volume has no redundancy left. Add a disk to start the rebuild.</p>
+          <p class="warn-box">{t('A disk is missing: the volume has no redundancy left. Add a disk to start the rebuild.')}</p>
         {/if}
         {#if !v.managed && !v.mountpoint}
           {#if v.filesystem === 'ext4' || v.filesystem === 'btrfs'}
             <div class="notice-box">
-              <p><strong>Found on the disks.</strong> This volume was made by another system (e.g. the original ReadyNAS OS){v.lv ? `, with LVM (${v.lv})` : ''}. Use it as is: its files stay where they are.</p>
-              <p class="muted small">The array gets the name below, its {v.filesystem} filesystem is checked, then mounted. Then create shares on it, one per existing folder you want to share.</p>
+              <p><strong>{t('Found on the disks.')}</strong> {v.lv ? t('This volume was made by another system (e.g. the original ReadyNAS OS), with LVM ({lv}).', { lv: v.lv }) : t('This volume was made by another system (e.g. the original ReadyNAS OS).')} {t('Use it as is: its files stay where they are.')}</p>
+              <p class="muted small">{t('The array gets the name below, its {fs} filesystem is checked, then mounted. Then create shares on it, one per existing folder you want to share.', { fs: v.filesystem })}</p>
               <div class="add">
-                <label>Name <input bind:value={adoptName} placeholder="data" maxlength="16" /></label>
-                <button onclick={() => run(() => startJob(`/api/volumes/${encodeURIComponent(v.name)}/adopt`, { name: adoptName }))} disabled={busy || !adoptName}>Use this volume</button>
+                <label>{t('Name')} <input bind:value={adoptName} placeholder="data" maxlength="16" /></label>
+                <button onclick={() => run(() => startJob(`/api/volumes/${encodeURIComponent(v.name)}/adopt`, { name: adoptName }))} disabled={busy || !adoptName}>{t('Use this volume')}</button>
               </div>
             </div>
           {:else}
-            <p class="hint">Made by another system ({v.filesystem || 'no filesystem'}): nothing to mount. Delete it to reuse its disk space.</p>
+            <p class="hint">{t('Made by another system ({fs}): nothing to mount. Delete it to reuse its disk space.', { fs: v.filesystem || t('no filesystem') })}</p>
           {/if}
         {/if}
         {#if v.canGrowFS}
           <div class="warn-box">
-            <p>The filesystem uses only {formatBytes(v.totalBytes)} of the {formatBytes(v.sizeBytes)} volume.</p>
-            <button class="secondary" onclick={() => run(() => startJob(`/api/volumes/${encodeURIComponent(v.name)}/grow-fs`, {}))} disabled={busy}>Grow filesystem</button>
+            <p>{t('The filesystem uses only {used} of the {size} volume.', { used: formatBytes(v.totalBytes), size: formatBytes(v.sizeBytes) })}</p>
+            <button class="secondary" onclick={() => run(() => startJob(`/api/volumes/${encodeURIComponent(v.name)}/grow-fs`, {}))} disabled={busy}>{t('Grow filesystem')}</button>
           </div>
         {/if}
 
         <div>
-          <h3>Disks</h3>
+          <h3>{t('Disks')}</h3>
           <table class="members">
             <tbody>
               {#each v.members as m (m.device)}
                 {@const l = memberLabel(m)}
                 {@const d = disks.find((x) => x.name === m.disk)}
                 <tr>
-                  <td><strong>{d?.bay ? `Bay ${d.bay}` : m.disk}</strong> <span class="muted small">{m.device}</span></td>
+                  <td><strong>{d?.bay ? t('Bay {n}', { n: d.bay }) : m.disk}</strong> <span class="muted small">{m.device}</span></td>
                   <td><span class="badge {l.cls}">{l.text}</span></td>
-                  <td class="right">{#if v.level !== 'raid0'}<button class="link danger-text" onclick={() => askRemove(v, m)} disabled={busy}>Remove</button>{/if}</td>
+                  <td class="right">{#if v.level !== 'raid0'}<button class="link danger-text" onclick={() => askRemove(v, m)} disabled={busy}>{t('Remove')}</button>{/if}</td>
                 </tr>
               {/each}
-              {#each Array(missing(v)) as _}<tr><td colspan="3" class="error small">Missing disk</td></tr>{/each}
+              {#each Array(missing(v)) as _}<tr><td colspan="3" class="error small">{t('Missing disk')}</td></tr>{/each}
             </tbody>
           </table>
         </div>
@@ -413,26 +419,26 @@
           {@const choice = addChoice[v.name] ?? candidates(v)[0].name}
           {@const isSpare = spares(v).some((m) => m.disk === choice)}
           <div class="stack add-disk">
-            <h3>Add a disk</h3>
-            <select bind:value={addChoice[v.name]} aria-label="Disk to add">
+            <h3>{t('Add a disk')}</h3>
+            <select bind:value={addChoice[v.name]} aria-label={t('Disk to add')}>
               {#each candidates(v) as c (c.name)}<option value={c.name}>{c.label}</option>{/each}
             </select>
             <div class="add">
               {#if v.degraded > 0}
-                {#if !isSpare}<button class="secondary" onclick={() => run(() => startJob(`/api/volumes/${v.name}/add`, { disk: choice }))} disabled={busy}>Add &amp; rebuild</button>{/if}
+                {#if !isSpare}<button class="secondary" onclick={() => run(() => startJob(`/api/volumes/${v.name}/add`, { disk: choice }))} disabled={busy}>{t('Add & rebuild')}</button>{/if}
               {:else}
-                {#if canExpand(v)}<button onclick={() => askExpand(v, choice)} disabled={busy}>Expand volume</button>{/if}
-                {#if !isSpare}<button class="secondary" onclick={() => run(() => startJob(`/api/volumes/${v.name}/add`, { disk: choice }))} disabled={busy}>Add as hot spare</button>{/if}
+                {#if canExpand(v)}<button onclick={() => askExpand(v, choice)} disabled={busy}>{t('Expand volume')}</button>{/if}
+                {#if !isSpare}<button class="secondary" onclick={() => run(() => startJob(`/api/volumes/${v.name}/add`, { disk: choice }))} disabled={busy}>{t('Add as hot spare')}</button>{/if}
               {/if}
             </div>
-            <p class="hint">{v.degraded > 0 ? 'Replaces the missing disk.' : canExpand(v) ? 'Expand adds the disk\'s space. A hot spare stays idle and takes over when a disk fails.' : 'A hot spare stays idle and takes over when a disk fails.'}</p>
+            <p class="hint">{v.degraded > 0 ? t('Replaces the missing disk.') : canExpand(v) ? t("Expand adds the disk's space. A hot spare stays idle and takes over when a disk fails.") : t('A hot spare stays idle and takes over when a disk fails.')}</p>
           </div>
         {/if}
 
         <VolumeMaintenance volume={v} {busy} onJob={(j) => (job = j)} />
 
         <div class="actions">
-          <button class="secondary danger-text" onclick={() => askDelete(v)} disabled={busy}>Delete volume</button>
+          <button class="secondary danger-text" onclick={() => askDelete(v)} disabled={busy}>{t('Delete volume')}</button>
         </div>
       </aside>
     {/if}

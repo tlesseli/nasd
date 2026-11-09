@@ -3,6 +3,7 @@
   import { api, formatBytes } from '../api.js'
   import ConfirmDialog from './ConfirmDialog.svelte'
   import JobPanel from './JobPanel.svelte'
+  import { t, N_ } from '../i18n.svelte.js'
 
   let { onSessionLost } = $props()
   let security = $state(null)
@@ -48,10 +49,10 @@
   async function createUser(event) {
     event.preventDefault()
     formError = ''
-    if (newPw !== newPw2) return (formError = 'The passwords do not match.')
+    if (newPw !== newPw2) return (formError = t('The passwords do not match.'))
     try {
       await api.post('/api/users', { name: newName, password: newPw })
-      notice = `User ${newName} created. Give them access to shares on the Shares page.`
+      notice = t('User {name} created. Give them access to shares on the Shares page.', { name: newName })
       adding = false
       newName = newPw = newPw2 = ''
       refresh()
@@ -68,11 +69,11 @@
   async function savePassword(event) {
     event.preventDefault()
     pwError = ''
-    if (pw !== pw2) return (pwError = 'The passwords do not match.')
+    if (pw !== pw2) return (pwError = t('The passwords do not match.'))
     try {
       if (pwFor === '__admin__') await api.post('/api/me/password', { current, new: pw })
       else await api.post(`/api/users/${pwFor}/password`, { password: pw })
-      notice = pwFor === '__admin__' ? 'Admin password changed. Other browsers were signed out.' : `Password of ${pwFor} changed.`
+      notice = pwFor === '__admin__' ? t('Admin password changed. Other browsers were signed out.') : t('Password of {name} changed.', { name: pwFor })
       pwFor = null
     } catch (e) {
       pwError = e.message
@@ -90,7 +91,7 @@
     const mb = Math.round((Number(quotaFor.value) || 0) * (quotaFor.unit === 'GB' ? 1024 : 1))
     try {
       await api.post(`/api/users/${quotaFor.name}/quota`, { quotaMB: mb })
-      notice = `Quota of ${quotaFor.name}: ${quotaText(mb)}.`
+      notice = t('Quota of {name}: {quota}.', { name: quotaFor.name, quota: quotaText(mb) })
       quotaFor = null
       refresh()
     } catch (e) {
@@ -109,19 +110,21 @@
 
   function askDelete(u) {
     dialog = {
-      title: `Delete user ${u.name}?`,
-      message: `${u.name} loses access to ${u.shares.length ? u.shares.join(', ') : 'all shares'}. Their files stay on the volumes.`,
-      confirmLabel: 'Delete user',
+      title: t('Delete user {name}?', { name: u.name }),
+      message: u.shares.length
+        ? t('{name} loses access to {shares}. Their files stay on the volumes.', { name: u.name, shares: u.shares.join(', ') })
+        : t('{name} loses access to all shares. Their files stay on the volumes.', { name: u.name }),
+      confirmLabel: t('Delete user'),
       onConfirm: async () => {
         await api.post(`/api/users/${u.name}/delete`)
         dialog = null
-        notice = `User ${u.name} deleted.`
+        notice = t('User {name} deleted.', { name: u.name })
         refresh()
       },
     }
   }
 
-  const quotaText = (mb) => (mb ? (mb % 1024 === 0 ? `${mb / 1024} GB` : `${mb} MB`) : 'Unlimited')
+  const quotaText = (mb) => (mb ? (mb % 1024 === 0 ? `${mb / 1024} GB` : `${mb} MB`) : t('Unlimited'))
   const withQuotas = $derived(quotas.filter((q) => q.enabled))
   // Space used by a user on each volume with quotas.
   const usageOf = (name) =>
@@ -130,19 +133,19 @@
   // Status from the quota usage on any volume with quotas.
   function status(u) {
     const worst = usageOf(u.name).reduce((m, x) => Math.max(m, x.limitKB ? x.usedKB / x.limitKB : 0), 0)
-    if (worst >= 1) return ['bad', 'Over quota']
-    if (worst >= 0.9) return ['warn', 'Near quota']
-    return ['good', 'Active']
+    if (worst >= 1) return ['bad', N_('Over quota')]
+    if (worst >= 0.9) return ['warn', N_('Near quota')]
+    return ['good', N_('Active')]
   }
 </script>
 
 <main class="page">
   <div class="page-head">
     <div>
-      <div class="eyebrow">Local accounts · file sharing only</div>
-      <h1>Users</h1>
+      <div class="eyebrow">{t('Local accounts · file sharing only')}</div>
+      <h1>{t('Users')}</h1>
     </div>
-    <div class="actions">{#if !adding}<button onclick={() => (adding = true)}>New user</button>{/if}</div>
+    <div class="actions">{#if !adding}<button onclick={() => (adding = true)}>{t('New user')}</button>{/if}</div>
   </div>
 
   {#if error}<p class="error">{error}</p>{/if}
@@ -150,39 +153,39 @@
   {#if job}<JobPanel {job} onFinished={refresh} onClose={() => (job = null)} />{/if}
 
   <div class="grid cols-4 kpis">
-    <div class="card kpi"><div class="label">Users</div><div class="value">{users.length}</div></div>
-    <div class="card kpi"><div class="label">With a quota</div><div class="value">{users.filter((u) => u.quotaMB).length} <small>/ {users.length}</small></div></div>
-    <div class="card kpi"><div class="label">Home folders</div><div class="value">{homes?.enabled ? 'On' : 'Off'}</div></div>
-    <div class="card kpi" class:warn={security?.failedSignIns24h}><div class="label">Failed sign-ins · 24 h</div><div class="value">{security?.failedSignIns24h ?? '–'}</div></div>
+    <div class="card kpi"><div class="label">{t('Users')}</div><div class="value">{users.length}</div></div>
+    <div class="card kpi"><div class="label">{t('With a quota')}</div><div class="value">{users.filter((u) => u.quotaMB).length} <small>/ {users.length}</small></div></div>
+    <div class="card kpi"><div class="label">{t('Home folders')}</div><div class="value">{homes?.enabled ? t('On') : t('Off')}</div></div>
+    <div class="card kpi" class:warn={security?.failedSignIns24h}><div class="label">{t('Failed sign-ins · 24 h')}</div><div class="value">{security?.failedSignIns24h ?? '–'}</div></div>
   </div>
 
   {#if adding}
     <form class="card create" onsubmit={createUser}>
-      <h2>New user</h2>
+      <h2>{t('New user')}</h2>
       <label>
-        User name
+        {t('User name')}
         <!-- svelte-ignore a11y_autofocus -->
         <input bind:value={newName} autocomplete="off" spellcheck="false" maxlength="32" autofocus />
-        <span class="hint">Lowercase letters, digits, - and _. This is what they type when connecting.</span>
+        <span class="hint">{t('Lowercase letters, digits, - and _. This is what they type when connecting.')}</span>
       </label>
       <div class="two-cols">
-        <label>Password <input type="password" bind:value={newPw} autocomplete="new-password" minlength="8" required /></label>
-        <label>Confirm password <input type="password" bind:value={newPw2} autocomplete="new-password" required /></label>
+        <label>{t('Password')} <input type="password" bind:value={newPw} autocomplete="new-password" minlength="8" required /></label>
+        <label>{t('Confirm password')} <input type="password" bind:value={newPw2} autocomplete="new-password" required /></label>
       </div>
       {#if formError}<p class="error">{formError}</p>{/if}
       <div class="actions">
-        <button type="button" class="secondary" onclick={() => (adding = false)}>Cancel</button>
-        <button type="submit">Create user</button>
+        <button type="button" class="secondary" onclick={() => (adding = false)}>{t('Cancel')}</button>
+        <button type="submit">{t('Create user')}</button>
       </div>
     </form>
   {/if}
 
   <div class="users-layout">
     <section class="card table-card">
-      <div class="card-head"><h2>Users</h2></div>
+      <div class="card-head"><h2>{t('Users')}</h2></div>
       {#if users.length}
         <table class="data">
-          <thead><tr><th>User</th><th class="hide-sm">Shares</th><th>Quota</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>{t('User')}</th><th class="hide-sm">{t('Shares')}</th><th>{t('Quota')}</th><th>{t('Status')}</th><th></th></tr></thead>
           <tbody>
             {#each users as u (u.name)}
               {@const [cls, st] = status(u)}
@@ -200,31 +203,31 @@
                     <span class="small">{quotaText(u.quotaMB)}</span>
                   {/each}
                 </td>
-                <td><span class="badge {cls}">{st}</span></td>
+                <td><span class="badge {cls}">{t(st)}</span></td>
                 <td class="right row-actions">
-                  <button class="link" onclick={() => openPassword(u.name)}>Password</button>
-                  <button class="link" onclick={() => openQuota(u)}>Quota</button>
-                  <button class="link danger-text" onclick={() => askDelete(u)}>Delete</button>
+                  <button class="link" onclick={() => openPassword(u.name)}>{t('Password')}</button>
+                  <button class="link" onclick={() => openQuota(u)}>{t('Quota')}</button>
+                  <button class="link danger-text" onclick={() => askDelete(u)}>{t('Delete')}</button>
                 </td>
               </tr>
             {/each}
           </tbody>
         </table>
       {:else if loaded}
-        <p class="muted empty-note">No users yet. Create one for each person who will use the NAS.</p>
+        <p class="muted empty-note">{t('No users yet. Create one for each person who will use the NAS.')}</p>
       {/if}
       {#if quotas.length}
         <div class="quota-volumes">
-          <span class="muted small">Quotas apply on:</span>
+          <span class="muted small">{t('Quotas apply on:')}</span>
           {#each quotas as q (q.volume)}
             {#if q.enabled}
               <span class="badge good">{q.volume}</span>
             {:else if q.filesystem === 'ext4'}
-              <span class="small">{q.volume} (off)</span>
+              <span class="small">{t('{volume} (off)', { volume: q.volume })}</span>
               <button class="link small" onclick={() => enableQuotas(q.volume)} disabled={job?.status === 'running'}
-                title="The volume is unmounted for a few seconds: nobody should be using it">Enable</button>
+                title={t('The volume is unmounted for a few seconds: nobody should be using it')}>{t('Enable')}</button>
             {:else}
-              <span class="muted small">{q.volume} (not available on {q.filesystem})</span>
+              <span class="muted small">{t('{volume} (not available on {filesystem})', { volume: q.volume, filesystem: q.filesystem })}</span>
             {/if}
           {/each}
         </div>
@@ -233,20 +236,20 @@
 
     <div class="stack">
       <section class="card">
-        <div class="card-head"><h2>Sign-in policy</h2></div>
+        <div class="card-head"><h2>{t('Sign-in policy')}</h2></div>
         {#if security}
           <dl class="share-info">
-            <dt>Minimum password length</dt><dd class="right">{security.minPasswordLength}</dd>
-            <dt>Lockout</dt><dd class="right">{security.lockoutTries} tries · {security.lockoutMinutes} min</dd>
-            <dt>Admin session</dt><dd class="right">{security.sessionMinutes} min idle</dd>
-            <dt>SSH for users</dt><dd class="right good-text">Refused</dd>
+            <dt>{t('Minimum password length')}</dt><dd class="right">{security.minPasswordLength}</dd>
+            <dt>{t('Lockout')}</dt><dd class="right">{t('{tries} tries · {minutes} min', { tries: security.lockoutTries, minutes: security.lockoutMinutes })}</dd>
+            <dt>{t('Admin session')}</dt><dd class="right">{t('{minutes} min idle', { minutes: security.sessionMinutes })}</dd>
+            <dt>{t('SSH for users')}</dt><dd class="right good-text">{t('Refused')}</dd>
           </dl>
         {/if}
       </section>
       <section class="card">
-        <div class="card-head"><h2>Administrator</h2></div>
-        <div class="who"><span class="avatar">AD</span><div><div>admin</div><div class="muted small">Signs in here · can't use shares</div></div>
-          <span class="spacer"></span><button class="link" onclick={() => openPassword('__admin__')}>Password</button></div>
+        <div class="card-head"><h2>{t('Administrator')}</h2></div>
+        <div class="who"><span class="avatar">AD</span><div><div>admin</div><div class="muted small">{t("Signs in here · can't use shares")}</div></div>
+          <span class="spacer"></span><button class="link" onclick={() => openPassword('__admin__')}>{t('Password')}</button></div>
       </section>
     </div>
   </div>
@@ -255,16 +258,16 @@
 {#if pwFor}
   <div class="backdrop" role="dialog" aria-modal="true" aria-labelledby="pw-title">
     <form class="card dialog" onsubmit={savePassword}>
-      <h2 id="pw-title">Change password: {pwFor === '__admin__' ? 'admin' : pwFor}</h2>
+      <h2 id="pw-title">{t('Change password: {name}', { name: pwFor === '__admin__' ? 'admin' : pwFor })}</h2>
       {#if pwFor === '__admin__'}
-        <label>Current password <input type="password" bind:value={current} autocomplete="current-password" required /></label>
+        <label>{t('Current password')} <input type="password" bind:value={current} autocomplete="current-password" required /></label>
       {/if}
-      <label>New password <input type="password" bind:value={pw} autocomplete="new-password" minlength="8" required /></label>
-      <label>Confirm new password <input type="password" bind:value={pw2} autocomplete="new-password" required /></label>
+      <label>{t('New password')} <input type="password" bind:value={pw} autocomplete="new-password" minlength="8" required /></label>
+      <label>{t('Confirm new password')} <input type="password" bind:value={pw2} autocomplete="new-password" required /></label>
       {#if pwError}<p class="error">{pwError}</p>{/if}
       <div class="actions">
-        <button type="button" class="secondary" onclick={() => (pwFor = null)}>Cancel</button>
-        <button type="submit">Change password</button>
+        <button type="button" class="secondary" onclick={() => (pwFor = null)}>{t('Cancel')}</button>
+        <button type="submit">{t('Change password')}</button>
       </div>
     </form>
   </div>
@@ -273,18 +276,18 @@
 {#if quotaFor}
   <div class="backdrop" role="dialog" aria-modal="true" aria-labelledby="quota-title">
     <form class="card dialog" onsubmit={saveQuota}>
-      <h2 id="quota-title">Quota: {quotaFor.name}</h2>
-      <p class="small">Maximum space {quotaFor.name} can fill on each volume, in all shares together. Empty or 0 = unlimited.</p>
+      <h2 id="quota-title">{t('Quota: {name}', { name: quotaFor.name })}</h2>
+      <p class="small">{t('Maximum space {name} can fill on each volume, in all shares together. Empty or 0 = unlimited.', { name: quotaFor.name })}</p>
       <div class="add">
         <!-- svelte-ignore a11y_autofocus -->
-        <input type="number" min="0" bind:value={quotaFor.value} placeholder="Unlimited" style="width: 9rem" autofocus />
-        <select bind:value={quotaFor.unit} aria-label="Unit"><option>GB</option><option>MB</option></select>
+        <input type="number" min="0" bind:value={quotaFor.value} placeholder={t('Unlimited')} style="width: 9rem" autofocus />
+        <select bind:value={quotaFor.unit} aria-label={t('Unit')}><option>GB</option><option>MB</option></select>
       </div>
-      {#if !withQuotas.length}<p class="hint">Saved now, enforced once quotas are enabled on a volume.</p>{/if}
+      {#if !withQuotas.length}<p class="hint">{t('Saved now, enforced once quotas are enabled on a volume.')}</p>{/if}
       {#if quotaError}<p class="error">{quotaError}</p>{/if}
       <div class="actions">
-        <button type="button" class="secondary" onclick={() => (quotaFor = null)}>Cancel</button>
-        <button type="submit">Save</button>
+        <button type="button" class="secondary" onclick={() => (quotaFor = null)}>{t('Cancel')}</button>
+        <button type="submit">{t('Save')}</button>
       </div>
     </form>
   </div>

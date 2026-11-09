@@ -5,11 +5,13 @@
   import Search from './ui/Search.svelte'
   import Login from './lib/Login.svelte'
   import Dashboard from './lib/dashboard/Dashboard.svelte'
+  import LangPicker from './lib/LangPicker.svelte'
   import Volumes from './lib/Volumes.svelte'
   import Shares from './lib/Shares.svelte'
   import Users from './lib/Users.svelte'
   import Backups from './lib/Backups.svelte'
   import System from './lib/System.svelte'
+  import { t, N_ } from './i18n.svelte.js'
 
   // 'loading' | 'setup' | 'login' | 'app'
   let screen = $state('loading')
@@ -29,12 +31,12 @@
   let route = $state(parseHash())
 
   const pages = [
-    { path: '/', label: 'Overview', icon: 'home' },
-    { path: '/volumes', label: 'Volumes & Disks', icon: 'database', badge: true },
-    { path: '/shares', label: 'Shares', icon: 'folder' },
-    { path: '/users', label: 'Users', icon: 'users' },
-    { path: '/backups', label: 'Backups', icon: 'archive' },
-    { path: '/system', label: 'System Settings', icon: 'settings' },
+    { path: '/', label: N_('Overview'), icon: 'home' },
+    { path: '/volumes', label: N_('Volumes & Disks'), icon: 'database', badge: true },
+    { path: '/shares', label: N_('Shares'), icon: 'folder' },
+    { path: '/users', label: N_('Users'), icon: 'users' },
+    { path: '/backups', label: N_('Backups'), icon: 'archive' },
+    { path: '/system', label: N_('System Settings'), icon: 'settings' },
   ]
   const section = (p) => '/' + (p.split('/')[1] ?? '')
 
@@ -99,12 +101,12 @@
 </script>
 
 {#if bootError}
-  <main class="center"><p class="error">Cannot reach the NAS: {bootError}</p></main>
+  <main class="center"><p class="error">{t('Cannot reach the NAS: {error}', { error: bootError })}</p></main>
 {:else if screen === 'setup' || screen === 'login'}
   <Login setup={screen === 'setup'} {onAuthenticated} />
 {:else if screen === 'app'}
   <div class="shell">
-    <aside class="sidebar" class:open={menuOpen} aria-label="Navigation">
+    <aside class="sidebar" class:open={menuOpen} aria-label={t('Navigation')}>
       <div class="brand">
         <div class="brand-logo"><Icon name="server" size={18} /></div>
         <div>
@@ -113,16 +115,16 @@
         </div>
       </div>
       <button class="search-btn" onclick={() => (searchOpen = true)}>
-        <Icon name="search" size={15} /> Search… <span class="kbd">Ctrl K</span>
+        <Icon name="search" size={15} /> {t('Search…')} <span class="kbd">Ctrl K</span>
       </button>
-      <div class="nav-label">MANAGE</div>
+      <div class="nav-label">{t('MANAGE')}</div>
       <nav class="nav">
         {#each pages as p (p.path)}
           <a href="#{p.path}" class:active={section(route.path) === p.path} aria-current={section(route.path) === p.path ? 'page' : undefined}>
-            <Icon name={p.icon} size={17} /> {p.label}
+            <Icon name={p.icon} size={17} /> {t(p.label)}
             {#if p.badge && storageProblems.length}
               <span class="nav-badge" class:bad={storageProblems.some((x) => x.severity === 'critical')}
-                title="{storageProblems.length} problem(s)">{storageProblems.length}</span>
+                title={t('{n} problem(s)', { n: storageProblems.length })}>{storageProblems.length}</span>
             {/if}
           </a>
         {/each}
@@ -130,28 +132,29 @@
 
       <div class="status-card">
         <div class="online"><span class="dot" class:warn={problems.length} class:bad={problems.some((x) => x.severity === 'critical')}></span>
-          Online · {days} day{days === 1 ? '' : 's'}</div>
+          {days === 1 ? t('Online · {n} day', { n: days }) : t('Online · {n} days', { n: days })}</div>
         {#if total}
           <span class="meter"><span style="width: {(100 * used) / total}%"></span></span>
-          <span class="muted">{formatBytes(used)} of {formatBytes(total)} · nasd {sys?.version ?? ''}</span>
+          <span class="muted">{t('{used} of {total}', { used: formatBytes(used), total: formatBytes(total) })} · nasd {sys?.version ?? ''}</span>
         {:else}
-          <span class="muted">No volume yet · nasd {sys?.version ?? ''}</span>
+          <span class="muted">{t('No volume yet')} · nasd {sys?.version ?? ''}</span>
         {/if}
       </div>
+      <LangPicker />
       <div class="account">
         <span class="avatar">{(user ?? 'ad').slice(0, 2).toUpperCase()}</span>
-        <div><div>{user}</div><div class="muted small">Administrator</div></div>
+        <div><div>{user}</div><div class="muted small">{t('Administrator')}</div></div>
         <span class="spacer"></span>
-        <button class="icon-btn" onclick={logout} title="Sign out" aria-label="Sign out"><Icon name="logout" size={16} /></button>
+        <button class="icon-btn" onclick={logout} title={t('Sign out')} aria-label={t('Sign out')}><Icon name="logout" size={16} /></button>
       </div>
     </aside>
 
     <div class="main">
       <div class="mobile-bar">
-        <button class="icon-btn" onclick={() => (menuOpen = !menuOpen)} aria-label="Menu"><Icon name="menu" size={20} /></button>
+        <button class="icon-btn" onclick={() => (menuOpen = !menuOpen)} aria-label={t('Menu')}><Icon name="menu" size={20} /></button>
         <strong>{hostname}</strong>
         <span class="spacer"></span>
-        <button class="icon-btn" onclick={() => (searchOpen = true)} aria-label="Search"><Icon name="search" size={18} /></button>
+        <button class="icon-btn" onclick={() => (searchOpen = true)} aria-label={t('Search')}><Icon name="search" size={18} /></button>
       </div>
       {#if section(route.path) === '/volumes'}
         <Volumes {onSessionLost} params={route.params} />

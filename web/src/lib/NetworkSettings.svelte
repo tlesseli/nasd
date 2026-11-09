@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import { api, formatBytes } from '../api.js'
+  import { t, N_ } from '../i18n.svelte.js'
 
   let info = $state(null)
   let bondModes = $state([])
@@ -51,7 +52,7 @@
   async function confirm() {
     try {
       await api.post('/api/network/confirm')
-      msg = { ok: true, text: 'New network settings kept.' }
+      msg = { ok: true, text: t('New network settings kept.') }
       load()
     } catch (e) {
       msg = { ok: false, text: e.message }
@@ -61,21 +62,21 @@
   let secondsLeft = $derived(info?.pending ? Math.max(0, Math.round((new Date(info.pending.deadline) - now) / 1000)) : 0)
   let newAddress = $derived(info?.settings.managed && !info.settings.dhcp ? info.settings.address.split('/')[0] : null)
   const modeHelp = {
-    'active-backup': 'Failover: one port works, the other takes over if its cable or switch port fails. Works with any switch.',
-    'balance-alb': 'Failover + spreads traffic over both ports. Works with any switch.',
-    '802.3ad': 'LACP: both ports form one faster link. Requires a managed switch configured for LACP.',
+    'active-backup': N_('Failover: one port works, the other takes over if its cable or switch port fails. Works with any switch.'),
+    'balance-alb': N_('Failover + spreads traffic over both ports. Works with any switch.'),
+    '802.3ad': N_('LACP: both ports form one faster link. Requires a managed switch configured for LACP.'),
   }
 </script>
 
 {#if info}
   {#if info.pending}
     <div class="card pending">
-      <h2>Confirm the new network settings</h2>
-      <p>If this page still works, the change is fine: keep it. Otherwise the previous settings come back automatically in <strong>{secondsLeft} s</strong>.</p>
+      <h2>{t('Confirm the new network settings')}</h2>
+      <p>{@html t('If this page still works, the change is fine: keep it. Otherwise the previous settings come back automatically in <strong>{seconds} s</strong>.', { seconds: secondsLeft })}</p>
       {#if newAddress && !location.hostname.startsWith(newAddress)}
-        <p class="small">If the address changed, open <a class="mono" href="https://{newAddress}:{location.port || 443}/#/system">https://{newAddress}:{location.port || 443}</a> and confirm from there.</p>
+        <p class="small">{t('If the address changed, open')} <a class="mono" href="https://{newAddress}:{location.port || 443}/#/system">https://{newAddress}:{location.port || 443}</a> {t('and confirm from there.')}</p>
       {/if}
-      <div class="actions"><button onclick={confirm}>Keep these settings</button></div>
+      <div class="actions"><button onclick={confirm}>{t('Keep these settings')}</button></div>
     </div>
   {/if}
 
@@ -94,72 +95,72 @@
           <div>
             <div class="port-title"><strong>{p.label}</strong> <span class="mono muted small">{p.name}</span></div>
             <div class="small">
-              {#if p.link}<span class="badge good">Connected</span> {p.speedMbps ? speedText(p.speedMbps) : ''}{p.duplex ? ` · ${p.duplex} duplex` : ''}
-              {:else}<span class="badge neutral">No cable</span>{/if}
+              {#if p.link}<span class="badge good">{t('Connected')}</span> {p.speedMbps ? speedText(p.speedMbps) : ''}{p.duplex ? ` · ${t('{duplex} duplex', { duplex: p.duplex })}` : ''}
+              {:else}<span class="badge neutral">{t('No cable')}</span>{/if}
             </div>
           </div>
         </div>
         <dl class="port-info small">
-          <dt>Address</dt><dd class="mono">{p.addresses.length ? p.addresses.join(', ') : '—'}{p.master ? ` (via ${p.master})` : ''}</dd>
+          <dt>{t('Address')}</dt><dd class="mono">{p.addresses.length ? p.addresses.join(', ') : '—'}{p.master ? ` ${t('(via {master})', { master: p.master })}` : ''}</dd>
           <dt>MAC</dt><dd class="mono">{p.mac}</dd>
-          <dt>Traffic</dt><dd>↓ {formatBytes(p.rxBytes)} · ↑ {formatBytes(p.txBytes)}</dd>
-          <dt>MTU</dt><dd>{p.mtu}{p.driver ? ` · driver ${p.driver}` : ''}</dd>
+          <dt>{t('Traffic')}</dt><dd>↓ {formatBytes(p.rxBytes)} · ↑ {formatBytes(p.txBytes)}</dd>
+          <dt>MTU</dt><dd>{p.mtu}{p.driver ? ` · ${t('driver {driver}', { driver: p.driver })}` : ''}</dd>
         </dl>
       </div>
     {/each}
   </div>
-  <p class="small muted gw">Gateway (router): <span class="mono">{info.gateway || '—'}</span></p>
+  <p class="small muted gw">{t('Gateway (router):')} <span class="mono">{info.gateway || '—'}</span></p>
 
   <form class="card create" onsubmit={apply}>
     <label class="check">
       <input type="checkbox" bind:checked={n.managed} />
-      <span><strong>Configure the network here</strong> <span class="muted small">· otherwise the system default applies (automatic address from your router)</span></span>
+      <span><strong>{t('Configure the network here')}</strong> <span class="muted small">{t('· otherwise the system default applies (automatic address from your router)')}</span></span>
     </label>
 
     {#if n.managed}
       <fieldset>
-        <legend>Interfaces</legend>
+        <legend>{t('Interfaces')}</legend>
         {#each info.physical as p}
           <label class="check"><input type="checkbox" bind:group={n.interfaces} value={p} /><span class="mono">{p}</span></label>
         {/each}
         {#if n.interfaces.length > 1}
           <label>
-            Bonding mode (both ports act as one)
+            {t('Bonding mode (both ports act as one)')}
             <select bind:value={n.bond}>
               {#each bondModes as m}<option value={m}>{m}</option>{/each}
             </select>
           </label>
-          <p class="hint">{modeHelp[n.bond || 'active-backup']}</p>
+          <p class="hint">{t(modeHelp[n.bond || 'active-backup'])}</p>
         {/if}
       </fieldset>
 
       <fieldset>
-        <legend>Address</legend>
-        <label class="check"><input type="radio" bind:group={n.dhcp} value={true} /><span>Automatic (DHCP)</span></label>
-        <label class="check"><input type="radio" bind:group={n.dhcp} value={false} /><span>Fixed address <span class="muted small">· recommended for a NAS: its address never changes</span></span></label>
+        <legend>{t('Address')}</legend>
+        <label class="check"><input type="radio" bind:group={n.dhcp} value={true} /><span>{t('Automatic (DHCP)')}</span></label>
+        <label class="check"><input type="radio" bind:group={n.dhcp} value={false} /><span>{t('Fixed address')} <span class="muted small">{t('· recommended for a NAS: its address never changes')}</span></span></label>
         {#if !n.dhcp}
           <div class="two-cols">
-            <label>Address / prefix <input bind:value={n.address} placeholder="192.168.1.50/24" spellcheck="false" /></label>
-            <label>Gateway (router) <input bind:value={n.gateway} placeholder="192.168.1.1" spellcheck="false" /></label>
-            <label>DNS servers <input bind:value={dnsText} placeholder="192.168.1.1, 1.1.1.1" spellcheck="false" /></label>
+            <label>{t('Address / prefix')} <input bind:value={n.address} placeholder="192.168.1.50/24" spellcheck="false" /></label>
+            <label>{t('Gateway (router)')} <input bind:value={n.gateway} placeholder="192.168.1.1" spellcheck="false" /></label>
+            <label>{t('DNS servers')} <input bind:value={dnsText} placeholder="192.168.1.1, 1.1.1.1" spellcheck="false" /></label>
           </div>
-          <p class="hint">Pick an address outside your router's DHCP range so no other device gets it.</p>
+          <p class="hint">{t("Pick an address outside your router's DHCP range so no other device gets it.")}</p>
         {/if}
       </fieldset>
 
       <label>
         MTU
         <select bind:value={n.mtu}>
-          <option value={0}>Standard (1500)</option>
-          <option value={9000}>Jumbo frames (9000)</option>
+          <option value={0}>{t('Standard (1500)')}</option>
+          <option value={9000}>{t('Jumbo frames (9000)')}</option>
         </select>
-        <span class="hint">Jumbo frames speed up large transfers only if every switch and computer on the path supports them.</span>
+        <span class="hint">{t('Jumbo frames speed up large transfers only if every switch and computer on the path supports them.')}</span>
       </label>
     {/if}
 
     {#if msg}<p class={msg.ok ? 'good-text small' : 'error small'}>{msg.text}</p>{/if}
-    <div class="actions"><button type="submit" disabled={!!info.pending}>Apply</button></div>
-    <p class="hint">After applying you have 90 seconds to confirm. Without confirmation, the previous settings return: a mistake can't lock you out.</p>
+    <div class="actions"><button type="submit" disabled={!!info.pending}>{t('Apply')}</button></div>
+    <p class="hint">{t("After applying you have 90 seconds to confirm. Without confirmation, the previous settings return: a mistake can't lock you out.")}</p>
   </form>
 {/if}
 

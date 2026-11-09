@@ -5,6 +5,7 @@
   import ConfirmDialog from './ConfirmDialog.svelte'
   import HomeFolders from './HomeFolders.svelte'
   import Icon from '../ui/Icon.svelte'
+  import { t, N_ } from '../i18n.svelte.js'
 
   let { hostname, onSessionLost, params = {} } = $props()
 
@@ -62,46 +63,45 @@
   async function save(req) {
     if (selected === '__new__') {
       await api.post('/api/shares', req)
-      notice = `Share ${req.name} created.`
+      notice = t('Share {name} created.', { name: req.name })
       selected = req.name
       preset = null
     } else {
       await api.post(`/api/shares/${selected}`, req)
-      notice = `Share ${selected} saved.`
+      notice = t('Share {name} saved.', { name: selected })
     }
     refresh()
   }
 
   function askDelete(sh) {
     dialog = {
-      title: `Stop sharing ${sh.name}?`,
-      message: `The share disappears from the network. Its files are kept in ${sh.path}; create a share with the same name on the same volume to get them back.`,
-      confirmLabel: 'Delete share',
+      title: t('Stop sharing {name}?', { name: sh.name }),
+      message: t('The share disappears from the network. Its files are kept in {path}; create a share with the same name on the same volume to get them back.', { path: sh.path }),
+      confirmLabel: t('Delete share'),
       onConfirm: async () => {
         await api.post(`/api/shares/${sh.name}/delete`)
         dialog = null
         selected = null
-        notice = `Share ${sh.name} deleted. Files kept in ${sh.path}.`
+        notice = t('Share {name} deleted. Files kept in {path}.', { name: sh.name, path: sh.path })
         refresh()
       },
     }
   }
 
-  const accessLabel = { ro: 'read', rw: 'edit' }
   function summary(sh) {
     const entries = Object.entries(sh.access)
     const parts = []
     const rw = entries.filter(([, a]) => a === 'rw').map(([u]) => u)
     const ro = entries.filter(([, a]) => a === 'ro').map(([u]) => u)
-    if (rw.length) parts.push(`${rw.length > 2 ? rw.length + ' users' : rw.join(', ')} ${accessLabel.rw}`)
-    if (ro.length) parts.push(`${ro.length > 2 ? ro.length + ' users' : ro.join(', ')} ${accessLabel.ro}`)
-    if (sh.guestRead) parts.push('guests read')
-    return parts.length ? parts.join(' · ') : 'Nobody has access yet'
+    if (rw.length) parts.push(rw.length > 2 ? t('{n} users edit', { n: rw.length }) : t('{names} edit', { names: rw.join(', ') }))
+    if (ro.length) parts.push(ro.length > 2 ? t('{n} users read', { n: ro.length }) : t('{names} read', { names: ro.join(', ') }))
+    if (sh.guestRead) parts.push(t('guests read'))
+    return parts.length ? parts.join(' · ') : t('Nobody has access yet')
   }
   function status(sh) {
-    if (!sh.available) return ['bad', 'Offline']
-    if (sh.smbDisabled && !sh.ftp && !sh.rsync) return ['neutral', 'Disabled']
-    return ['good', 'Online']
+    if (!sh.available) return ['bad', N_('Offline')]
+    if (sh.smbDisabled && !sh.ftp && !sh.rsync) return ['neutral', N_('Disabled')]
+    return ['good', N_('Online')]
   }
   const svcOff = (k) => (k === 'smb' ? settings.smbDisabled : k === 'ftp' ? !settings.ftpEnabled : !settings.rsyncEnabled)
 </script>
@@ -109,11 +109,11 @@
 <main class="page">
   <div class="page-head">
     <div>
-      <div class="eyebrow">{shares.length} share{shares.length === 1 ? '' : 's'}{smbSessions ? ` · ${smbSessions.replace('sessions', 'SMB sessions')}` : ''}</div>
-      <h1>Shares</h1>
+      <div class="eyebrow">{shares.length === 1 ? t('{n} share', { n: 1 }) : t('{n} shares', { n: shares.length })}{smbSessions ? ` · ${smbSessions.replace('sessions', 'SMB sessions')}` : ''}</div>
+      <h1>{t('Shares')}</h1>
     </div>
     <div class="actions">
-      <button onclick={() => ((preset = null), (selected = '__new__'))} disabled={!mountedVolumes.length} title={mountedVolumes.length ? '' : 'Create a volume first'}>New share</button>
+      <button onclick={() => ((preset = null), (selected = '__new__'))} disabled={!mountedVolumes.length} title={mountedVolumes.length ? '' : t('Create a volume first')}>{t('New share')}</button>
     </div>
   </div>
 
@@ -121,13 +121,13 @@
   {#if notice}<p class="notice">{notice}</p>{/if}
 
   <div class="filters">
-    <div class="segmented-btns" role="group" aria-label="Filter by service">
-      {#each [['all', 'All'], ['smb', 'SMB'], ['ftp', 'FTP'], ['rsync', 'rsync']] as [k, label]}
-        <button class:on={filter === k} aria-pressed={filter === k} onclick={() => (filter = k)}>{label} {counts[k]}</button>
+    <div class="segmented-btns" role="group" aria-label={t('Filter by service')}>
+      {#each [['all', N_('All')], ['smb', 'SMB'], ['ftp', 'FTP'], ['rsync', 'rsync']] as [k, label]}
+        <button class:on={filter === k} aria-pressed={filter === k} onclick={() => (filter = k)}>{t(label)} {counts[k]}</button>
       {/each}
     </div>
     <span class="spacer"></span>
-    <input class="filter-input" bind:value={text} placeholder="Filter shares…" aria-label="Filter shares" />
+    <input class="filter-input" bind:value={text} placeholder={t('Filter shares…')} aria-label={t('Filter shares')} />
   </div>
 
   <div class:with-panel={!!selected}>
@@ -137,7 +137,7 @@
           {@const [cls, st] = status(sh)}
           <button class="card share-card" class:selected={selected === sh.name} onclick={() => (selected = selected === sh.name ? null : sh.name)}
             aria-pressed={selected === sh.name}>
-            <div class="sc-top"><span class="folder"><Icon name="folder" size={16} /></span><span class="spacer"></span><span class="badge {cls}">{st}</span></div>
+            <div class="sc-top"><span class="folder"><Icon name="folder" size={16} /></span><span class="spacer"></span><span class="badge {cls}">{t(st)}</span></div>
             <div class="sc-name">{sh.name}</div>
             <div class="mono muted small">/{sh.volume}/{sh.name}</div>
             <div class="small sc-access">{summary(sh)}</div>
@@ -146,7 +146,7 @@
                 {#if has.smb(sh)}<span class="badge mono" class:off={svcOff('smb')}>SMB</span>{/if}
                 {#if sh.ftp}<span class="badge mono" class:off={svcOff('ftp')}>FTP</span>{/if}
                 {#if sh.rsync}<span class="badge mono" class:off={svcOff('rsync')}>rsync{sh.rsync === 'rw' ? ' r/w' : ''}</span>{/if}
-                {#if !has.smb(sh) && !sh.ftp && !sh.rsync}<span class="muted small">no service</span>{/if}
+                {#if !has.smb(sh) && !sh.ftp && !sh.rsync}<span class="muted small">{t('no service')}</span>{/if}
               </div>
               <span class="small">{sh.size ? formatBytes(sh.size.bytes) : '—'}</span>
             </div>
@@ -154,23 +154,23 @@
         {:else}
           {#if loaded}
             <div class="card empty">
-              {#if shares.length}<p class="muted">No share matches this filter.</p>
-              {:else}<p><strong>No shares yet.</strong></p><p class="muted">A share is a folder on a volume that computers on your network can open, like a network drive.</p>{/if}
+              {#if shares.length}<p class="muted">{t('No share matches this filter.')}</p>
+              {:else}<p><strong>{t('No shares yet.')}</strong></p><p class="muted">{t('A share is a folder on a volume that computers on your network can open, like a network drive.')}</p>{/if}
             </div>
           {/if}
         {/each}
       </div>
       {#if unshared.length}
         <div class="card">
-          <h2>Folders not shared yet</h2>
-          <p class="muted small">These folders are already on your volumes (for example from the original ReadyNAS OS). Share one to make it visible on the network: its files stay as they are.</p>
+          <h2>{t('Folders not shared yet')}</h2>
+          <p class="muted small">{t('These folders are already on your volumes (for example from the original ReadyNAS OS). Share one to make it visible on the network: its files stay as they are.')}</p>
           <table class="members">
             <tbody>
               {#each unshared as f (f.volume + '/' + f.name)}
                 <tr>
                   <td><Icon name="folder" size={14} /> <strong>{f.name}</strong></td>
                   <td class="mono muted small">/{f.volume}/{f.name}</td>
-                  <td class="right"><button class="secondary" onclick={() => newShareFor(f)}>Share</button></td>
+                  <td class="right"><button class="secondary" onclick={() => newShareFor(f)}>{t('Share')}</button></td>
                 </tr>
               {/each}
             </tbody>
@@ -179,32 +179,32 @@
       {/if}
       <div class="card"><HomeFolders /></div>
       {#if settings.smbDisabled || (!settings.ftpEnabled && shares.some((x) => x.ftp)) || (!settings.rsyncEnabled && shares.some((x) => x.rsync))}
-        <p class="hint">Struck-through services are switched off for the whole NAS: <a href="#/system/services">System Settings → Services</a>.</p>
+        <p class="hint">{t('Struck-through services are switched off for the whole NAS:')} <a href="#/system/services">{t('System Settings')} → {t('Services')}</a>.</p>
       {/if}
     </div>
 
     {#if selected}
-      <aside class="card panel" aria-label={sel ? `Share ${sel.name}` : 'New share'}>
+      <aside class="card panel" aria-label={sel ? t('Share {name}', { name: sel.name }) : t('New share')}>
         <div class="panel-head">
           <div>
-            <h2>{sel ? sel.name : 'New share'}</h2>
+            <h2>{sel ? sel.name : t('New share')}</h2>
             {#if sel && !sel.smbDisabled}<div class="mono muted small copyable">\\{hostname}\{sel.name}</div>{/if}
           </div>
           <span class="spacer"></span>
-          <button class="icon-btn" onclick={() => (selected = null)} aria-label="Close"><Icon name="x" size={16} /></button>
+          <button class="icon-btn" onclick={() => (selected = null)} aria-label={t('Close')}><Icon name="x" size={16} /></button>
         </div>
         {#if sel}
           <div class="grid cols-2 tiles">
-            <div class="tile"><div class="label">Volume</div><div class="value mono">{sel.volume}</div></div>
-            <div class="tile"><div class="label">Size</div><div class="value">{sel.size ? formatBytes(sel.size.bytes) : 'measuring…'}</div></div>
-            <div class="tile"><div class="label">Recycle bin</div><div class="value">{sel.recycleBin ? 'On' : 'Off'}</div></div>
-            <div class="tile"><div class="label">Network browsing</div><div class="value">{sel.smbDisabled ? '—' : sel.hidden ? 'Not listed' : 'Listed'}</div></div>
+            <div class="tile"><div class="label">{t('Volume')}</div><div class="value mono">{sel.volume}</div></div>
+            <div class="tile"><div class="label">{t('Size')}</div><div class="value">{sel.size ? formatBytes(sel.size.bytes) : t('measuring…')}</div></div>
+            <div class="tile"><div class="label">{t('Recycle bin')}</div><div class="value">{sel.recycleBin ? t('On') : t('Off')}</div></div>
+            <div class="tile"><div class="label">{t('Network browsing')}</div><div class="value">{sel.smbDisabled ? '—' : sel.hidden ? t('Not listed') : t('Listed')}</div></div>
           </div>
           <dl class="share-info small">
-            {#if !sel.smbDisabled}<dt>Mac / Linux</dt><dd class="mono copyable">smb://{hostname}.local/{sel.name}</dd>{/if}
+            {#if !sel.smbDisabled}<dt>{t('Mac / Linux')}</dt><dd class="mono copyable">smb://{hostname}.local/{sel.name}</dd>{/if}
             {#if sel.ftp}<dt>FTP</dt><dd class="mono copyable">ftp://{hostname}.local/{sel.name}/</dd>{/if}
             {#if sel.rsync}<dt>rsync</dt><dd class="mono copyable">rsync://{sel.rsyncUser ? sel.rsyncUser + '@' : ''}{hostname}.local/{sel.name}/</dd>{/if}
-            <dt>Folder</dt><dd class="mono">{sel.path}</dd>
+            <dt>{t('Folder')}</dt><dd class="mono">{sel.path}</dd>
           </dl>
         {/if}
         {#key selected + (preset ? preset.volume + '/' + preset.name : '')}

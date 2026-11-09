@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { api } from '../api.js'
   import Icon from './Icon.svelte'
+  import { t, N_ } from '../i18n.svelte.js'
 
   // Command palette (Ctrl/⌘ K): jump to a page, a settings section, a share,
   // a user or a volume. Arrow keys + Enter, Escape closes.
@@ -13,28 +14,28 @@
   let input = $state()
 
   const fixed = [
-    { label: 'Overview', hint: 'Page', href: '#/', icon: 'home' },
-    { label: 'Volumes & Disks', hint: 'Page', href: '#/volumes', icon: 'database' },
-    { label: 'Shares', hint: 'Page', href: '#/shares', icon: 'folder' },
-    { label: 'Users', hint: 'Page', href: '#/users', icon: 'users' },
-    { label: 'Backups', hint: 'Page', href: '#/backups', icon: 'archive' },
-    ...[['general', 'General: name, workgroup, time'], ['network', 'Network'], ['services', 'Services: SMB, FTP, rsync'],
-      ['alerts', 'Alerts'], ['power', 'Power & UPS'], ['hardware', 'Hardware: button, fan'], ['updates', 'Software update'],
-      ['events', 'Events & logs'], ['restart', 'Restart / shut down']].map(([id, label]) => ({
-      label, hint: 'System Settings', href: `#/system/${id}`, icon: 'settings',
+    { label: N_('Overview'), hint: N_('Page'), href: '#/', icon: 'home' },
+    { label: N_('Volumes & Disks'), hint: N_('Page'), href: '#/volumes', icon: 'database' },
+    { label: N_('Shares'), hint: N_('Page'), href: '#/shares', icon: 'folder' },
+    { label: N_('Users'), hint: N_('Page'), href: '#/users', icon: 'users' },
+    { label: N_('Backups'), hint: N_('Page'), href: '#/backups', icon: 'archive' },
+    ...[['general', N_('General: name, workgroup, time')], ['network', N_('Network')], ['services', N_('Services: SMB, FTP, rsync')],
+      ['alerts', N_('Alerts')], ['power', N_('Power & UPS')], ['hardware', N_('Hardware: button, fan')], ['updates', N_('Software update')],
+      ['events', N_('Events & logs')], ['restart', N_('Restart / shut down')]].map(([id, label]) => ({
+      label, hint: N_('System Settings'), href: `#/system/${id}`, icon: 'settings',
     })),
   ]
 
   onMount(async () => {
     input?.focus()
-    items = fixed
+    items = fixed.map((i) => ({ ...i, label: t(i.label), hint: t(i.hint) }))
     try {
       const [shares, users, volumes] = await Promise.all([api.get('/api/shares'), api.get('/api/users'), api.get('/api/volumes')])
       items = [
-        ...fixed,
-        ...shares.map((s) => ({ label: s.name, hint: 'Share', href: `#/shares?sel=${encodeURIComponent(s.name)}`, icon: 'folder' })),
-        ...users.map((u) => ({ label: u.name, hint: 'User', href: `#/users?sel=${encodeURIComponent(u.name)}`, icon: 'users' })),
-        ...volumes.map((v) => ({ label: v.name, hint: 'Volume', href: `#/volumes?sel=${encodeURIComponent(v.name)}`, icon: 'database' })),
+        ...fixed.map((i) => ({ ...i, label: t(i.label), hint: t(i.hint) })),
+        ...shares.map((s) => ({ label: s.name, hint: t('Share'), href: `#/shares?sel=${encodeURIComponent(s.name)}`, icon: 'folder' })),
+        ...users.map((u) => ({ label: u.name, hint: t('User'), href: `#/users?sel=${encodeURIComponent(u.name)}`, icon: 'users' })),
+        ...volumes.map((v) => ({ label: v.name, hint: t('Volume'), href: `#/volumes?sel=${encodeURIComponent(v.name)}`, icon: 'database' })),
       ]
     } catch {}
   })
@@ -64,11 +65,11 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="backdrop palette-backdrop" onclick={(e) => e.target === e.currentTarget && onClose()}>
-  <div class="card palette" role="dialog" aria-modal="true" aria-label="Search">
+  <div class="card palette" role="dialog" aria-modal="true" aria-label={t('Search')}>
     <div class="palette-input">
       <Icon name="search" size={16} />
-      <input bind:this={input} bind:value={query} onkeydown={key} placeholder="Search pages, shares, users, volumes…"
-        aria-label="Search" aria-controls="palette-results" />
+      <input bind:this={input} bind:value={query} onkeydown={key} placeholder={t('Search pages, shares, users, volumes…')}
+        aria-label={t('Search')} aria-controls="palette-results" />
       <span class="kbd">Esc</span>
     </div>
     <ul id="palette-results" role="listbox">
@@ -79,7 +80,7 @@
           </button>
         </li>
       {:else}
-        <li class="muted small none">Nothing found.</li>
+        <li class="muted small none">{t('Nothing found.')}</li>
       {/each}
     </ul>
   </div>

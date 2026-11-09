@@ -4,11 +4,12 @@
   import Overview from '../Overview.svelte'
   import ControlPanel from './ControlPanel.svelte'
   import Neon from './Neon.svelte'
+  import { t, N_ } from '../../i18n.svelte.js'
 
   let { user, onSessionLost, problems = [] } = $props()
 
   const KEY = 'nasd.dashboard'
-  const styles = [['classic', 'Classic'], ['panel', 'Control panel'], ['neon', 'Neon']]
+  const styles = [['classic', N_('Classic')], ['panel', N_('Control panel')], ['neon', N_('Neon')]]
   let style = $state((() => {
     try {
       const s = localStorage.getItem(KEY)
@@ -25,10 +26,10 @@
   }
 </script>
 
-<div class="style-bar" role="group" aria-label="Dashboard style">
-  <span class="muted small">Dashboard</span>
+<div class="style-bar" role="group" aria-label={t('Dashboard style')}>
+  <span class="muted small">{t('Dashboard')}</span>
   <div class="segmented-btns">
-    {#each styles as [id, label]}<button class:on={style === id} aria-pressed={style === id} onclick={() => choose(id)}>{label}</button>{/each}
+    {#each styles as [id, label]}<button class:on={style === id} aria-pressed={style === id} onclick={() => choose(id)}>{t(label)}</button>{/each}
   </div>
 </div>
 

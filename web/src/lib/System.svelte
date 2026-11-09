@@ -9,34 +9,35 @@
   import HardwareSettings from './HardwareSettings.svelte'
   import ServicesSettings from './ServicesSettings.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
+  import { t, N_ } from '../i18n.svelte.js'
 
   let { hostname, onSessionLost, sectionId = 'general' } = $props()
 
   // Sub-sections, each with its own URL (#/system/alerts...).
   const sections = [
-    ['general', 'General', 'server'], ['network', 'Network', 'network'], ['services', 'Services', 'folder'],
-    ['alerts', 'Alerts', 'bell'], ['power', 'Power & UPS', 'power'], ['hardware', 'Hardware', 'drive'],
-    ['updates', 'Software update', 'refresh'], ['events', 'Events & logs', 'file'], ['restart', 'Restart / shut down', 'power'],
+    ['general', N_('General'), 'server'], ['network', N_('Network'), 'network'], ['services', N_('Services'), 'folder'],
+    ['alerts', N_('Alerts'), 'bell'], ['power', N_('Power & UPS'), 'power'], ['hardware', N_('Hardware'), 'drive'],
+    ['updates', N_('Software update'), 'refresh'], ['events', N_('Events & logs'), 'file'], ['restart', N_('Restart / shut down'), 'power'],
   ]
   let dialog = $state(null)
 
   function askPower(action) {
     const restart = action === 'reboot'
     dialog = {
-      title: restart ? 'Restart the NAS?' : 'Shut down the NAS?',
+      title: restart ? t('Restart the NAS?') : t('Shut down the NAS?'),
       message: restart
-        ? 'Shares are unavailable for a minute or two. Open transfers are interrupted.'
-        : 'The NAS powers off. You will need to press its power button (or use Wake-on-LAN) to start it again.',
-      confirmLabel: restart ? 'Restart' : 'Shut down',
+        ? t('Shares are unavailable for a minute or two. Open transfers are interrupted.')
+        : t('The NAS powers off. You will need to press its power button (or use Wake-on-LAN) to start it again.'),
+      confirmLabel: restart ? t('Restart') : t('Shut down'),
       onConfirm: async () => {
         try {
           await api.post('/api/system/power', { action, force: false })
         } catch (e) {
-          if (!e.message.includes('disk operation') || !window.confirm(e.message + '\n\nDo it anyway?')) throw e
+          if (!e.message.includes('disk operation') || !window.confirm(e.message + '\n\n' + t('Do it anyway?'))) throw e
           await api.post('/api/system/power', { action, force: true })
         }
         dialog = null
-        notice = restart ? 'Restarting… this page reconnects when the NAS is back.' : 'Shutting down…'
+        notice = restart ? t('Restarting… this page reconnects when the NAS is back.') : t('Shutting down…')
       },
     }
   }
@@ -86,7 +87,7 @@
     error = notice = ''
     try {
       await api.post('/api/alerts', payload())
-      notice = 'Alert settings saved.'
+      notice = t('Alert settings saved.')
       load()
     } catch (e) {
       error = e.message
@@ -96,10 +97,10 @@
   }
 
   async function test() {
-    testMsg = { ok: null, text: 'Sending…' }
+    testMsg = { ok: null, text: t('Sending…') }
     try {
       await api.post('/api/alerts/test', payload())
-      testMsg = { ok: true, text: 'Test message sent. Check the inbox (and the spam folder).' }
+      testMsg = { ok: true, text: t('Test message sent. Check the inbox (and the spam folder).') }
     } catch (e) {
       testMsg = { ok: false, text: e.message }
     }
@@ -142,14 +143,14 @@
 
 <main class="page">
   <div class="page-head">
-    <div><div class="eyebrow">Device-wide configuration</div><h1>System Settings</h1></div>
+    <div><div class="eyebrow">{t('Device-wide configuration')}</div><h1>{t('System Settings')}</h1></div>
   </div>
 
   <div class="settings">
-    <nav class="subnav" aria-label="Settings sections">
+    <nav class="subnav" aria-label={t('Settings sections')}>
       {#each sections as [id, label, icon] (id)}
         <button class:active={tab === id} aria-current={tab === id ? 'page' : undefined} onclick={() => (location.hash = `/system/${id}`)}>
-          <Icon name={icon} size={15} /> {label}
+          <Icon name={icon} size={15} /> {t(label)}
         </button>
       {/each}
     </nav>
@@ -160,49 +161,49 @@
   {#if tab === 'alerts' && cfg}
     <form class="card create" onsubmit={save}>
       <fieldset>
-        <legend>Send alerts to</legend>
+        <legend>{t('Send alerts to')}</legend>
         {#each emailsText as _, i}
-          <input type="email" bind:value={emailsText[i]} placeholder={i === 0 ? 'you@example.com' : 'optional'} aria-label="Email {i + 1}" />
+          <input type="email" bind:value={emailsText[i]} placeholder={i === 0 ? 'you@example.com' : t('optional')} aria-label={t('Email {n}', { n: i + 1 })} />
         {/each}
-        <p class="hint">Up to three addresses. An address you read on your phone helps when you're away.</p>
+        <p class="hint">{t("Up to three addresses. An address you read on your phone helps when you're away.")}</p>
       </fieldset>
 
       <fieldset>
-        <legend>Outgoing mail server (SMTP)</legend>
+        <legend>{t('Outgoing mail server (SMTP)')}</legend>
         <label>
-          Provider
+          {t('Provider')}
           <select onchange={(e) => useProvider(e.currentTarget.value)}>
-            <option value="">Other / fill in below</option>
+            <option value="">{t('Other / fill in below')}</option>
             {#each Object.keys(providers) as p}<option>{p}</option>{/each}
           </select>
         </label>
         <div class="two-cols">
-          <label>Server <input bind:value={cfg.smtp.host} placeholder="smtp.example.com" spellcheck="false" /></label>
-          <label>Port <input bind:value={cfg.smtp.port} inputmode="numeric" placeholder="587" /></label>
+          <label>{t('Server')} <input bind:value={cfg.smtp.host} placeholder="smtp.example.com" spellcheck="false" /></label>
+          <label>{t('Port')} <input bind:value={cfg.smtp.port} inputmode="numeric" placeholder="587" /></label>
           <label>
-            Security
+            {t('Security')}
             <select bind:value={cfg.smtp.security}>
-              <option value="starttls">STARTTLS (usually port 587)</option>
-              <option value="tls">SSL/TLS (usually port 465)</option>
-              <option value="none">None (local server only)</option>
+              <option value="starttls">{t('STARTTLS (usually port 587)')}</option>
+              <option value="tls">{t('SSL/TLS (usually port 465)')}</option>
+              <option value="none">{t('None (local server only)')}</option>
             </select>
           </label>
         </div>
         <div class="two-cols">
-          <label>User <input bind:value={cfg.smtp.user} autocomplete="off" spellcheck="false" /></label>
-          <label>Password <span class="hint">(empty = keep the saved one)</span>
+          <label>{t('User')} <input bind:value={cfg.smtp.user} autocomplete="off" spellcheck="false" /></label>
+          <label>{t('Password')} <span class="hint">{t('(empty = keep the saved one)')}</span>
             <input type="password" bind:value={cfg.smtp.password} autocomplete="new-password" /></label>
-          <label>Sender <span class="hint">(optional)</span> <input bind:value={cfg.smtp.from} placeholder="nas@example.com" /></label>
+          <label>{t('Sender')} <span class="hint">{t('(optional)')}</span> <input bind:value={cfg.smtp.from} placeholder="nas@example.com" /></label>
         </div>
-        <p class="hint">Gmail and Outlook need an <em>app password</em> (created in your account's security settings), not your normal password.</p>
+        <p class="hint">{t('Gmail and Outlook need an')} <em>{t('app password')}</em> {t("(created in your account's security settings), not your normal password.")}</p>
         <div class="add">
-          <button type="button" class="secondary" onclick={test}>Send test message</button>
+          <button type="button" class="secondary" onclick={test}>{t('Send test message')}</button>
           {#if testMsg}<span class={testMsg.ok === false ? 'error small' : testMsg.ok ? 'good-text small' : 'muted small'}>{testMsg.text}</span>{/if}
         </div>
       </fieldset>
 
       <fieldset>
-        <legend>Events</legend>
+        <legend>{t('Events')}</legend>
         <table class="members access">
           <tbody>
             {#each kinds as k (k.id)}
@@ -216,21 +217,21 @@
                 </td>
                 <td class="right">
                   <span class="badge {sevClass[k.severity]}">{k.severity}</span>
-                  {#if k.mandatory}<span class="muted small">always</span>{/if}
+                  {#if k.mandatory}<span class="muted small">{t('always')}</span>{/if}
                 </td>
               </tr>
             {/each}
           </tbody>
         </table>
         <div class="two-cols">
-          <label>Disk temperature alert above (°C)
+          <label>{t('Disk temperature alert above (°C)')}
             <input type="number" min="30" max="80" bind:value={cfg.diskTempLimit} placeholder={String(defaults.diskTempLimit)} /></label>
-          <label>Volume full alert above (%)
+          <label>{t('Volume full alert above (%)')}
             <input type="number" min="50" max="99" bind:value={cfg.volumeFullPercent} placeholder={String(defaults.volumeFullPercent)} /></label>
         </div>
       </fieldset>
 
-      <div class="actions"><button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button></div>
+      <div class="actions"><button type="submit" disabled={saving}>{saving ? t('Saving…') : t('Save')}</button></div>
     </form>
   {/if}
 
@@ -240,11 +241,11 @@
   {#if tab === 'general'}<GeneralSettings {hostname} />{/if}
   {#if tab === 'restart'}
     <section class="card danger-zone">
-      <div class="card-head"><h2>Restart or shut down</h2></div>
-      <p class="small muted">Connected computers lose their shares while the NAS is down. Running disk operations are protected: you'll be asked before interrupting one.</p>
+      <div class="card-head"><h2>{t('Restart or shut down')}</h2></div>
+      <p class="small muted">{t("Connected computers lose their shares while the NAS is down. Running disk operations are protected: you'll be asked before interrupting one.")}</p>
       <div class="actions">
-        <button class="secondary" onclick={() => askPower('reboot')}>Restart</button>
-        <button class="danger" onclick={() => askPower('poweroff')}>Shut down</button>
+        <button class="secondary" onclick={() => askPower('reboot')}>{t('Restart')}</button>
+        <button class="danger" onclick={() => askPower('poweroff')}>{t('Shut down')}</button>
       </div>
     </section>
   {/if}
@@ -259,24 +260,24 @@
           <strong>{e.subject}</strong>
           <span class="spacer"></span>
           <span class="muted small" title={e.emailError || ''}>
-            {new Date(e.time).toLocaleString()}{e.emailed ? ' · emailed' : e.emailError ? ' · email failed' : ''}
+            {new Date(e.time).toLocaleString()}{e.emailed ? ' · ' + t('emailed') : e.emailError ? ' · ' + t('email failed') : ''}
           </span>
           {#if e.body}<p class="muted small event-body">{e.body}</p>{/if}
         </div>
       {:else}
-        <p class="muted">No events yet.</p>
+        <p class="muted">{t('No events yet.')}</p>
       {/each}
     </div>
   {/if}
 
   {#if tab === 'events'}
-    <h2 class="logs-title">Logs</h2>
+    <h2 class="logs-title">{t('Logs')}</h2>
     <div class="add">
-      <select bind:value={logSource} onchange={loadLogs} aria-label="Log source">
+      <select bind:value={logSource} onchange={loadLogs} aria-label={t('Log source')}>
         {#each logSources as s}<option>{s}</option>{/each}
       </select>
-      <label class="check"><input type="checkbox" bind:checked={errorsOnly} onchange={loadLogs} /><span>Warnings and errors only</span></label>
-      <button class="secondary" onclick={loadLogs}>Refresh</button>
+      <label class="check"><input type="checkbox" bind:checked={errorsOnly} onchange={loadLogs} /><span>{t('Warnings and errors only')}</span></label>
+      <button class="secondary" onclick={loadLogs}>{t('Refresh')}</button>
     </div>
     <pre class="logs" bind:this={logEl}>{logLines.join('\n')}</pre>
   {/if}
