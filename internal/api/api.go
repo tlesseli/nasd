@@ -17,6 +17,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -51,6 +52,13 @@ const (
 )
 
 type Server struct {
+	// SetupCode must be given to create the admin account on first start
+	// (shown on the front display and in the system log): otherwise the
+	// first visitor on the network would choose the admin password.
+	// Empty = not required (tests). OnSetupDone runs once it's done.
+	SetupCode   string
+	OnSetupDone func()
+
 	Store    *store.Store
 	Disks    *disks.Service
 	Volumes  *volumes.Service
@@ -90,6 +98,7 @@ func (s *Server) Handler() http.Handler {
 	s.shareRoutes(mux)
 	s.backupRoutes(mux)
 	s.healthRoutes(mux)
+	s.sshRoutes(mux)
 	s.systemRoutes(mux)
 	s.users2Routes(mux)
 	s.hardwareRoutes(mux)
@@ -112,8 +121,11 @@ func (s *Server) needsSetup() bool {
 	return len(s.Store.Read().Users) == 0
 }
 
+// NeedsSetup: no admin account yet (first start).
+func (s *Server) NeedsSetup() bool { return s.needsSetup() }
+
 func (s *Server) getSetup(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]bool{"needsSetup": s.needsSetup()})
+	writeJSON(w, http.StatusOK, map[string]bool{"needsSetup": s.needsSetup(), "codeRequired": s.SetupCode != ""})
 }
 
 // postSetup creates the admin account on first start. Whoever reaches the
@@ -121,9 +133,24 @@ func (s *Server) getSetup(w http.ResponseWriter, r *http.Request) {
 func (s *Server) postSetup(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Password string `json:"password"`
+		Code     string `json:"code"`
 	}
 	if !readJSON(w, r, &req) {
 		return
+	}
+	if s.SetupCode != "" {
+		ip := clientIP(r)
+		if s.Throttle != nil && s.Throttle.Blocked(ip) {
+			writeError(w, http.StatusTooManyRequests, "too many failed attempts, try again in a few minutes")
+			return
+		}
+		if subtle.ConstantTimeCompare([]byte(strings.ToLower(strings.TrimSpace(req.Code))), []byte(s.SetupCode)) != 1 {
+			if s.Throttle != nil {
+				s.Throttle.Fail(ip)
+			}
+			writeError(w, http.StatusForbidden, "wrong setup code: it is shown on the NAS front display, and in the system log (journalctl -u nasd)")
+			return
+		}
 	}
 	if len(req.Password) < minPasswordLength {
 		writeError(w, http.StatusBadRequest, "password must be at least 8 characters")
@@ -149,6 +176,9 @@ func (s *Server) postSetup(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if s.OnSetupDone != nil {
+		s.OnSetupDone()
 	}
 	s.startSession(w, adminUser)
 	writeJSON(w, http.StatusOK, map[string]string{"username": adminUser})

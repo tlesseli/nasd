@@ -18,7 +18,10 @@ import (
 
 // openPanel returns the front panel on a ReadyNAS, nil elsewhere.
 func openPanel() *readynas.Panel {
-	if !readynas.Detect() {
+	if ok, why := readynas.Detect(); !ok {
+		if why != "not a NETGEAR ReadyNAS" {
+			log.Printf("front panel: %s", why)
+		}
 		return nil
 	}
 	p, err := readynas.Open()

@@ -52,3 +52,14 @@ UI: https://localhost:8443 (accept the self-signed certificate warning once).
 
 Inspired by the original *ReadyNAS for Home RAIDiator 4.2 Software Manual* (2011). Deliberately
 left out: NETGEAR cloud services, iSCSI, printers, AFP, add-ons.
+
+
+## License
+
+Copyright (C) 2026 Ulixes-Consulting. Free software under the
+[GNU General Public License v3](LICENSE): you may use, study, change and share
+it, and changed versions you distribute must stay under the same license.
+**No warranty**: nasd erases data when asked to (volumes, folders, disks).
+NETGEAR and ReadyNAS are trademarks of NETGEAR, Inc.; this project is not
+affiliated with NETGEAR. See [NOTICE](NOTICE) (third-party software, images).
+Bugs: tanguy@ulixes-consulting.be

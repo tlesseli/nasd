@@ -22,6 +22,7 @@
   let problems = $state([])
   let searchOpen = $state(false)
   let menuOpen = $state(false)
+  let codeRequired = $state(false) // first start: setup code needed
 
   // Hash router: #/shares?sel=Photos  ->  path "/shares", params {sel: "Photos"}
   function parseHash() {
@@ -64,7 +65,8 @@
     window.addEventListener('keydown', onKey)
     ;(async () => {
       try {
-        const { needsSetup } = await api.get('/api/setup')
+        const { needsSetup, codeRequired: c } = await api.get('/api/setup')
+        codeRequired = !!c
         if (needsSetup) return (screen = 'setup')
         onAuthenticated((await api.get('/api/me')).username)
       } catch (e) {
@@ -103,7 +105,7 @@
 {#if bootError}
   <main class="center"><p class="error">{t('Cannot reach the NAS: {error}', { error: bootError })}</p></main>
 {:else if screen === 'setup' || screen === 'login'}
-  <Login setup={screen === 'setup'} {onAuthenticated} />
+  <Login setup={screen === 'setup'} {codeRequired} {onAuthenticated} />
 {:else if screen === 'app'}
   <div class="shell">
     <aside class="sidebar" class:open={menuOpen} aria-label={t('Navigation')}>

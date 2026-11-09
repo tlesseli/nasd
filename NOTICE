@@ -1,0 +1,49 @@
+nasd: a NAS operating system for the NETGEAR ReadyNAS Ultra 4
+Copyright (C) 2026 Ulixes-Consulting
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation, version 3 of the License (see LICENSE).
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. It manages disks, RAID arrays and files: some of its
+operations erase data by design. Keep backups. See LICENSE, sections 15-16.
+
+Bug reports: tanguy@ulixes-consulting.be
+
+
+Trademarks
+----------
+NETGEAR, ReadyNAS and RAIDiator are trademarks of NETGEAR, Inc. This project
+is not affiliated with, endorsed by or supported by NETGEAR. The names are
+used only to say which hardware it runs on.
+
+
+No NETGEAR software in this project
+-----------------------------------
+No NETGEAR software is part of this project or of the images it builds. The
+front-panel support (display, disk lights, Backup button) was written from
+scratch, for interoperability, after studying how the hardware is wired.
+Never commit or distribute NETGEAR files: the flash backup made during the
+installation (image/readynas-flash.img), RAIDiator's system archives (*.tlz)
+or its kernel modules (*.ko). .gitignore refuses them.
+
+
+Third-party software in the system image
+----------------------------------------
+The image built by image/build.sh is a Debian 13 system (Linux, Samba,
+rsync, mdadm, vsftpd, NUT, rclone, OpenSSH...). Those packages keep their own
+licenses (many GPL), listed in /usr/share/doc/*/copyright inside the image.
+Their source code is available from Debian for the exact versions installed:
+https://www.debian.org/distrib/packages and https://snapshot.debian.org
+(the list of versions: dpkg-query -W inside the image). When you distribute
+an image, offer that source along with it, as the GPL requires.
+
+The web interface is built with Svelte and Vite (MIT licenses).
+
+
+Artwork
+-------
+web/src/assets/login-background.jpg: provided by Ulixes-Consulting. Before
+redistributing, make sure its license allows it.

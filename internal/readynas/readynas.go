@@ -48,11 +48,29 @@ const (
 	lcdBacklight       = 16 // pin 48
 )
 
-// Detect reports whether this is a NETGEAR ReadyNAS (from DMI).
-func Detect() bool {
-	vendor, _ := os.ReadFile("/sys/class/dmi/id/sys_vendor")
-	product, _ := os.ReadFile("/sys/class/dmi/id/product_name")
-	return strings.TrimSpace(string(vendor)) == "NETGEAR" && strings.HasPrefix(strings.TrimSpace(string(product)), "ReadyNAS")
+// Detect reports whether this is a machine whose front panel we know: a
+// NETGEAR ReadyNAS of the Ultra 2/4 family. The pins are written directly in
+// the chipset, so a wrong guess could drive pins that do something else:
+// all three must match, otherwise the panel is left alone.
+//   - DMI: NETGEAR / ReadyNAS,
+//   - the LPC bridge is an Intel ICH9 (8086:2918), where the pins live,
+//   - the CPU is an Atom D410 (the Ultra 6 has a D510 and other pins).
+// NASD_PANEL=off (environment) disables the panel whatever the machine.
+func Detect() (bool, string) {
+	if os.Getenv("NASD_PANEL") == "off" {
+		return false, "disabled (NASD_PANEL=off)"
+	}
+	read := func(p string) string { b, _ := os.ReadFile(p); return strings.TrimSpace(string(b)) }
+	if read("/sys/class/dmi/id/sys_vendor") != "NETGEAR" || !strings.HasPrefix(read("/sys/class/dmi/id/product_name"), "ReadyNAS") {
+		return false, "not a NETGEAR ReadyNAS"
+	}
+	if read("/sys/bus/pci/devices/0000:00:1f.0/vendor") != "0x8086" || read("/sys/bus/pci/devices/0000:00:1f.0/device") != "0x2918" {
+		return false, "ReadyNAS with an unknown chipset: front panel left alone"
+	}
+	if cpu := read("/proc/cpuinfo"); !strings.Contains(cpu, "Atom(TM) CPU D410") {
+		return false, "ReadyNAS model not supported (Ultra 2/4 only): front panel left alone"
+	}
+	return true, "ReadyNAS Ultra 2/4"
 }
 
 // Panel gives access to the front panel pins.

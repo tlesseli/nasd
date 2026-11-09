@@ -120,3 +120,21 @@ ssh -i image/id_ed25519 nas@<ip> 'sudo umount /boot/flash; sudo dd of=$(ls /dev/
 then unplug the USB disk. As long as the data disks weren't erased, RAIDiator
 starts as before. Otherwise its boot menu (Reset + Power) offers **OS
 reinstall**, which also resets the admin password to `netgear1`.
+
+## Giving the system to others
+```
+image/build.sh --dist      # image/nas-dist.raw: nothing personal inside
+```
+- **No key, no password**: the `nas` account is locked. After installing,
+  the owner adds their own public key in **System Settings → Services →
+  Administrator SSH access** (admin password asked).
+- **Own identity per installation**: SSH host keys are generated at first
+  boot, nasd's TLS certificate and data at first start (never shared).
+- **Setup code**: until the admin account exists, creating it requires the
+  code shown on the front display (and written in `journalctl -u nasd`), so
+  the first visitor on the network can't take the NAS over.
+- **License**: GPL-3.0 (LICENSE). Give the source of nasd with the image,
+  and offer the Debian source of the packages it contains (NOTICE).
+  Never include NETGEAR files (the flash backup, `*.tlz`, `*.ko`).
+- **Lost access**: `ssh … 'sudo systemctl stop nasd && sudo nasd -reset-admin; sudo systemctl start nasd'`
+  prints a new admin password; on the ReadyNAS, holding Backup 10 s does the same.

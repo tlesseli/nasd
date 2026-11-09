@@ -6,15 +6,16 @@
 # Reads the image with debugfs: no root, no mounting.
 set -euo pipefail
 cd "$(dirname "$0")"
-[[ -f nas.raw ]] || { echo "build the image first (image/build.sh)"; exit 1; }
+IMG=${1:-nas.raw}
+[[ -f $IMG ]] || { echo "build the image first (image/build.sh)"; exit 1; }
 
 # The root partition: its start (for debugfs) and its PARTUUID (for the kernel).
-read -r START PARTUUID < <(sfdisk --json nas.raw | python3 -c '
+read -r START PARTUUID < <(sfdisk --json "$IMG" | python3 -c '
 import json, sys
 for p in json.load(sys.stdin)["partitiontable"]["partitions"]:
     if p["type"] == "4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709":  # Linux root (x86-64)
         print(p["start"], p["uuid"].lower())')
-ROOTFS="nas.raw?offset=$((START * 512))"
+ROOTFS="$IMG?offset=$((START * 512))"
 
 VER=$(debugfs -R 'ls -p /boot' "$ROOTFS" 2>/dev/null | awk -F/ '$6 ~ /^vmlinuz-/ {sub("vmlinuz-", "", $6); print $6}' | sort -V | tail -1)
 [[ -n $VER ]] || { echo "no kernel found in the image"; exit 1; }

@@ -6,10 +6,12 @@
   import { t } from '../i18n.svelte.js'
 
   // setup=true: first start, choose the admin password.
-  let { setup, onAuthenticated } = $props()
+  // codeRequired: the setup code shown at the NAS must be given too.
+  let { setup, codeRequired = false, onAuthenticated } = $props()
 
   let password = $state('')
   let confirm = $state('')
+  let code = $state('')
   let error = $state('')
   let busy = $state(false)
 
@@ -20,7 +22,7 @@
     busy = true
     try {
       const res = setup
-        ? await api.post('/api/setup', { password })
+        ? await api.post('/api/setup', { password, code })
         : await api.post('/api/login', { username: 'admin', password })
       onAuthenticated(res.username)
     } catch (e) {
@@ -51,6 +53,13 @@
       </label>
     {/if}
 
+    {#if setup && codeRequired}
+      <label>
+        {t('Setup code')}
+        <input bind:value={code} autocomplete="off" spellcheck="false" placeholder="abcd-efgh" required />
+        <span class="hint">{t('Shown on the NAS front display. Without a display: in the system log (journalctl -u nasd).')}</span>
+      </label>
+    {/if}
     {#if error}<p class="error">{error}</p>{/if}
     <button type="submit" disabled={busy}>{busy ? t('Please wait…') : setup ? t('Create admin account') : t('Sign in')}</button>
     <LangPicker />

@@ -19,7 +19,10 @@ import (
 	"readynas/internal/volumes"
 )
 
-func newTestServer(t *testing.T) http.Handler {
+func newTestServer(t *testing.T) http.Handler { return newTestServerWith(t, nil) }
+
+// newTestServerWith lets a test adjust the server before it starts.
+func newTestServerWith(t *testing.T, adjust func(*Server)) http.Handler {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "state.json"))
 	if err != nil {
@@ -41,6 +44,9 @@ func newTestServer(t *testing.T) http.Handler {
 		Sessions: auth.NewSessions(time.Minute),
 		Throttle: auth.NewThrottle(3, time.Minute),
 		UI:       fstest.MapFS{"index.html": {Data: []byte("<h1>ui</h1>")}},
+	}
+	if adjust != nil {
+		adjust(s)
 	}
 	return s.Handler()
 }
@@ -133,5 +139,21 @@ func TestRandomPassword(t *testing.T) {
 	}
 	if len(seen) < 50 {
 		t.Fatal("passwords repeat")
+	}
+}
+
+// On first start the admin account needs the setup code shown at the NAS:
+// the first visitor on the network can't claim it.
+func TestSetupCode(t *testing.T) {
+	done := false
+	h := newTestServerWith(t, func(s *Server) { s.SetupCode = "k7m2-x9qa"; s.OnSetupDone = func() { done = true } })
+	if w := do(h, "POST", "/api/setup", `{"password":"correct horse"}`, ""); w.Code != 403 {
+		t.Fatalf("without code: %d", w.Code)
+	}
+	if w := do(h, "POST", "/api/setup", `{"password":"correct horse","code":"aaaa-bbbb"}`, ""); w.Code != 403 {
+		t.Fatalf("wrong code: %d", w.Code)
+	}
+	if w := do(h, "POST", "/api/setup", `{"password":"correct horse","code":" K7M2-X9QA "}`, ""); w.Code != 200 || !done {
+		t.Fatalf("right code (case and spaces ignored): %d %s, done=%v", w.Code, w.Body, done)
 	}
 }

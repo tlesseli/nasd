@@ -203,6 +203,15 @@ func main() {
 	}
 
 	// Stop cleanly on Ctrl-C or `systemctl stop` (SIGTERM).
+	// First start: whoever creates the admin account must give the setup
+	// code, shown on the front display and in the system log, so that the
+	// first visitor on the network can't take the NAS over.
+	if srv.NeedsSetup() {
+		srv.SetupCode = api.RandomCode()
+		log.Printf("first start: setup code %s (asked when creating the admin account)", srv.SetupCode)
+		display.Notice("Setup code:", srv.SetupCode, 365*24*time.Hour)
+		srv.OnSetupDone = func() { display.Notice("", "", 0) }
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	if panel != nil { // before btn.Run: the button reads the panel
 		wirePanel(ctx, panel, dk, loc, btn, display, srv)

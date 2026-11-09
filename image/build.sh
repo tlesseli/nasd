@@ -7,8 +7,17 @@
 # QEMU (it powers off when done), then produce image/nas.raw to write on a
 # USB SSD or stick (image/write.sh).
 #
-# Usage: image/build.sh        (needs: qemu, genisoimage, internet)
+# Usage: image/build.sh          your own NAS: your SSH key and a console
+#                                password (image/credentials.txt) are built in
+#        image/build.sh --dist   an image to give to others (nas-dist.raw):
+#                                no key, no password (the account is locked);
+#                                the owner adds their SSH key in the web UI.
+# Either way, every installation generates its own SSH host keys at first
+# boot and starts without nasd data (no shared secrets between copies).
+# (needs: qemu, genisoimage, internet)
 set -euo pipefail
+DIST=0; OUT=nas.raw
+if [[ ${1:-} == --dist ]]; then DIST=1; OUT=nas-dist.raw; fi
 cd "$(dirname "$0")"
 ROOT=$(cd .. && pwd)
 mkdir -p build
@@ -21,6 +30,10 @@ echo ">> building nasd"
 (cd "$ROOT" && make build >/dev/null)
 cp "$ROOT/bin/nasd" "$ROOT/deploy/nasd.service" build/
 
+if (( DIST )); then
+  # Nothing personal in an image for others.
+  ACCOUNT="    lock_passwd: true"
+else
 # Dedicated SSH key for the NAS (kept here, never committed).
 [[ -f id_ed25519 ]] || ssh-keygen -q -t ed25519 -N '' -C nas-admin -f id_ed25519
 # A console password for the "nas" user: only for the serial console (SSH
@@ -31,6 +44,11 @@ if [[ ! -f credentials.txt ]]; then
   chmod 600 credentials.txt
 fi
 PW=$(sed -n 's/^console password: //p' credentials.txt)
+ACCOUNT="    lock_passwd: false
+    plain_text_passwd: \"$PW\"
+    ssh_authorized_keys:
+      - $(cat id_ed25519.pub)"
+fi
 
 cat > build/user-data <<EOF
 #cloud-config
@@ -42,10 +60,7 @@ users:
     groups: [sudo]
     sudo: ALL=(ALL) NOPASSWD:ALL
     shell: /bin/bash
-    lock_passwd: false
-    plain_text_passwd: "$PW"
-    ssh_authorized_keys:
-      - $(cat id_ed25519.pub)
+$ACCOUNT
 ssh_pwauth: false
 package_update: true
 package_upgrade: true
@@ -95,6 +110,9 @@ write_files:
     content: |
       #!/bin/sh
       set -e
+      # This installation's own SSH identity (the image has none).
+      rm -f /etc/ssh/ssh_host_*
+      ssh-keygen -A
       ROOT=\$(findmnt -no SOURCE /)
       DISK=/dev/\$(lsblk -no PKNAME "\$ROOT")
       PART=\$(cat /sys/class/block/\$(basename "\$ROOT")/partition)
@@ -157,8 +175,9 @@ write_files:
   - path: /etc/systemd/system/nas-firstboot.service
     content: |
       [Unit]
-      Description=Grow the system partition to the whole disk (first boot)
+      Description=First boot: own SSH host keys, grow the system partition
       ConditionPathExists=!/var/lib/nas-firstboot.done
+      Before=ssh.service sshd.service
       [Service]
       Type=oneshot
       ExecStart=/usr/local/sbin/nas-firstboot
@@ -176,7 +195,9 @@ runcmd:
   - [sh, -c, "DEBIAN_FRONTEND=noninteractive apt-get purge -y 'linux-image-*cloud*' && sed -i 's/^MODULES=.*/MODULES=most/' /etc/initramfs-tools/initramfs.conf && update-initramfs -u -k all && update-grub"]
   # cloud-init has done its job: on the NAS there is no cloud to ask.
   - [touch, /etc/cloud/cloud-init.disabled]
-  - [sh, -c, "apt-get clean; rm -f /var/lib/nas-firstboot.done; truncate -s0 /etc/machine-id"]
+  # No secret may be shared between copies of the image: SSH host keys are
+  # made at first boot, nasd data (TLS key, state) at first start.
+  - [sh, -c, "apt-get clean; rm -f /var/lib/nas-firstboot.done /etc/ssh/ssh_host_*; rm -rf /var/lib/nasd; truncate -s0 /etc/machine-id"]
   - [poweroff]
 EOF
 printf 'instance-id: nas-image-%s\nlocal-hostname: nas\n' "$(date +%s)" > build/meta-data
@@ -192,7 +213,7 @@ qemu-system-x86_64 -machine q35,accel=kvm -cpu host -smp 2 -m 1536 -display none
 
 grep -q 'linux-image-amd64' build/provision.log || true
 echo ">> converting to a raw disk image"
-qemu-img convert -O raw build/nas.qcow2 nas.raw
-ls -lh nas.raw
-./flash-files.sh
+qemu-img convert -O raw build/nas.qcow2 "$OUT"
+ls -lh "$OUT"
+./flash-files.sh "$OUT"
 echo ">> done. Test it with image/test.sh, then write it with image/write.sh"

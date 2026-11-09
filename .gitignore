@@ -15,3 +15,9 @@ image/id_ed25519*
 image/build/
 image/credentials.txt
 image/*.img
+
+# NETGEAR software: never in this repository (see NOTICE).
+*.tlz
+*.ko
+*readynas-flash*
+**/rdx/

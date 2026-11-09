@@ -48,6 +48,12 @@ func (s *Server) ResetAdminPassword() (string, error) {
 	return pw, nil
 }
 
+// RandomCode: a setup code like "k7m2-x9qa" (no look-alike characters).
+func RandomCode() string {
+	pw := randomPassword()
+	return pw[:4] + "-" + pw[6:10]
+}
+
 // randomPassword: 10 characters without look-alikes (no 0/o, 1/l/i), shown
 // as two groups of five so it is easy to read on the display: "k7m2x-9qap4".
 func randomPassword() string {

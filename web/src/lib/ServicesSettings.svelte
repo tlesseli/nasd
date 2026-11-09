@@ -1,4 +1,5 @@
 <script>
+  import SSHKeys from './SSHKeys.svelte'
   import { onMount } from 'svelte'
   import { api } from '../api.js'
   import { t, N_ } from '../i18n.svelte.js'
@@ -71,3 +72,5 @@
   <p class="hint">{t("Discovery announces the NAS itself. Each share chooses its own services and whether it's listed (Shares page).")}
     {t("FTP uses the users' passwords: users created before FTP existed need a new password once (Users page) to log in over FTP.")}</p>
 {/if}
+
+<div class="ssh-card" style="margin-top: 14px"><SSHKeys /></div>
