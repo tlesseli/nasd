@@ -4,7 +4,7 @@
   import Icon from './ui/Icon.svelte'
   import Search from './ui/Search.svelte'
   import Login from './lib/Login.svelte'
-  import Overview from './lib/Overview.svelte'
+  import Dashboard from './lib/dashboard/Dashboard.svelte'
   import Volumes from './lib/Volumes.svelte'
   import Shares from './lib/Shares.svelte'
   import Users from './lib/Users.svelte'
@@ -164,7 +164,7 @@
       {:else if section(route.path) === '/system'}
         <System {hostname} {onSessionLost} sectionId={route.path.split('/')[2] ?? 'general'} />
       {:else}
-        <Overview {user} {onSessionLost} {problems} />
+        <Dashboard {user} {onSessionLost} {problems} />
       {/if}
     </div>
   </div>
