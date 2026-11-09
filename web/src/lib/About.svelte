@@ -12,6 +12,7 @@
     build = (await api.get('/api/system').catch(() => null))?.version ?? ''
   })
   const CONTACT = 'tanguy@ulixes-consulting.be'
+  const COFFEE = 'https://buymeacoffee.com/tanguylesseli'
   let mailto = $derived(`mailto:${CONTACT}?subject=${encodeURIComponent(`nasd ${build || __APP_VERSION__} – bug report (${hostname})`)}`)
 </script>
 
@@ -27,13 +28,18 @@
   <p>{t('Please send it to {email}: what you did, what you expected, and what happened instead. A screenshot helps. The version above is added to the subject for you.', { email: CONTACT })}</p>
   <p><a class="button-like" href={mailto}>{t('Report a bug')}</a></p>
 
+  <h3>{t('Support this project')}</h3>
+  <p>{t('nasd is free software: you may use, share and change it. If it is useful to you and you want to say thanks, you can buy its author a coffee.')}</p>
+  <p><a class="button-like coffee" href={COFFEE} target="_blank" rel="noopener noreferrer">☕ {t('Buy me a coffee')}</a></p>
+
   <Copyright />
 </section>
 
 <style>
   .about h3 { margin: 1.1rem 0 0.3rem; }
-  .about p { max-width: 70ch; }
+
   .button-like { display: inline-block; padding: 0.5rem 0.95rem; border-radius: var(--radius-sm); background: var(--primary-bg); color: var(--on-primary);
     text-decoration: none; font-weight: 500; }
   .button-like:hover { text-decoration: none; filter: brightness(0.92); }
+  .coffee { background: #ffdd00; color: #1a1205; }
 </style>

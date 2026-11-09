@@ -45,5 +45,11 @@ The web interface is built with Svelte and Vite (MIT licenses).
 
 Artwork
 -------
-web/src/assets/login-background.jpg: provided by Ulixes-Consulting. Before
-redistributing, make sure its license allows it.
+web/src/assets/login-background.jpg: created by Tanguy (Ulixes-Consulting)
+for this project, and distributed with it.
+
+
+Support
+-------
+nasd is free. If it is useful to you, you can buy its author a coffee:
+https://buymeacoffee.com/tanguylesseli
