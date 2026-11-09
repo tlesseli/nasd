@@ -16,6 +16,7 @@ endif
 all: build
 
 ui:
+	rm -rf web/dist/assets   # old builds would otherwise pile up inside nasd (emptyOutDir is off)
 	cd web && npm install --silent && npm run build
 
 # CGO_ENABLED=0: a static binary with no libc dependency.
