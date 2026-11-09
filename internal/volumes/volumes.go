@@ -74,6 +74,10 @@ type Volume struct {
 	// volume was found on the disks (made by another system) and can be
 	// adopted: see Adopt.
 	Managed bool `json:"managed"`
+	// System: "root" (the operating system runs from it) or "swap". Such
+	// arrays live on the data disks too (partitions 1 and 2), mirrored on
+	// each; they are never deleted or adopted.
+	System string `json:"system,omitempty"`
 }
 
 // FSDevice is the block device holding the filesystem: the array itself,
@@ -116,12 +120,13 @@ type Service struct {
 	Run          run.Func
 	SkipStatfs   bool          // tests
 	ProcMounts   string        // /proc/self/mounts ("" in tests)
+	ProcSwaps    string        // /proc/swaps ("" in tests)
 	PollInterval time.Duration // tests; default 5 s
 }
 
 func NewService(r run.Func) *Service {
 	return &Service{Sys: "/sys", Fstab: "/etc/fstab", MdadmConf: "/etc/mdadm/mdadm.conf", MountRoot: "/data", Run: r,
-		ProcMounts: "/proc/self/mounts"}
+		ProcMounts: "/proc/self/mounts", ProcSwaps: "/proc/swaps"}
 }
 
 // ---------------------------------------------------------------- reading
@@ -286,6 +291,12 @@ func (s *Service) fillNameAndFS(ctx context.Context, v *Volume) {
 		}
 	}
 	v.Managed = v.Name != "" && s.hasFstabEntry(v.Name)
+	switch {
+	case v.Mountpoint == "/":
+		v.System = "root"
+	case v.Filesystem == "swap" && s.inSwaps(v.Device):
+		v.System = "swap"
+	}
 	if v.Mountpoint != "" && s.ProcMounts != "" {
 		v.Quotas = mountHasOption(s.ProcMounts, v.Mountpoint, "usrquota")
 	}
@@ -342,6 +353,20 @@ func (s *Service) fillLVM(ctx context.Context, v *Volume) []*string {
 	lv := lvs[0]
 	v.LV, v.Filesystem, v.UUID = lv.Path, deref(lv.FSType), deref(lv.UUID)
 	return lv.Mountpoints
+}
+
+// inSwaps: the device is an active swap area.
+func (s *Service) inSwaps(dev string) bool {
+	if s.ProcSwaps == "" {
+		return false
+	}
+	data, _ := os.ReadFile(s.ProcSwaps)
+	for _, l := range strings.Split(string(data), "\n")[1:] {
+		if f := strings.Fields(l); len(f) > 0 && f[0] == dev {
+			return true
+		}
+	}
+	return false
 }
 
 // hasFstabEntry: nasd's marker for this volume is in fstab.

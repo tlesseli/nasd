@@ -92,7 +92,12 @@
     refresh()
   }
 
-  let memberOf = $derived(Object.fromEntries(volumes.flatMap((v) => v.members.map((m) => [m.disk, v.name]))))
+  // System and swap arrays live on the data disks too (RAIDiator's layout):
+  // they get a line of their own, not a volume card.
+  let pools = $derived(volumes.filter((v) => !v.system))
+  let systemArrays = $derived(volumes.filter((v) => v.system))
+  // A disk shows its data volume; one carrying only the system shows "system".
+  let memberOf = $derived(Object.fromEntries([...systemArrays, ...pools].flatMap((v) => v.members.map((m) => [m.disk, v.system ? 'system' : v.name]))))
   let dataDisks = $derived(disks.filter((d) => d.role === 'data' && !memberOf[d.name]))
   let freeDisks = $derived(dataDisks.filter((d) => !d.usage && !d.partitions?.length))
   let dirtyDisks = $derived(dataDisks.filter((d) => d.usage || d.partitions?.length))
@@ -223,7 +228,7 @@
 <main class="page">
   <div class="page-head">
     <div>
-      <div class="eyebrow">{volumes.length} volume{volumes.length === 1 ? '' : 's'} · {physical.filter((d) => d.role === 'data').length} data disks</div>
+      <div class="eyebrow">{pools.length} volume{pools.length === 1 ? '' : 's'} · {physical.filter((d) => d.role === 'data').length} data disks</div>
       <h1>Volumes &amp; Disks</h1>
     </div>
     <div class="actions">
@@ -244,7 +249,7 @@
   <div class:with-panel={!!sel}>
     <div class="stack">
       <div class="grid cols-2 pools">
-        {#each volumes as v (v.device)}
+        {#each pools as v (v.device)}
           {@const pct = v.totalBytes ? (100 * v.usedBytes) / v.totalBytes : 0}
           <button class="card pool-card" class:selected={selected === v.name} onclick={() => (selected = selected === v.name ? null : v.name)}
             aria-pressed={selected === v.name}>
@@ -287,6 +292,19 @@
           {/if}
         {/each}
       </div>
+      {#if systemArrays.length}
+        <div class="card system-line">
+          <Icon name="server" size={16} />
+          <div>
+            <strong>System</strong>
+            <span class="muted small">· on every data disk, managed with the volumes</span>
+            <div class="small">
+              {#each systemArrays as v, i (v.device)}{i ? ' · ' : ''}{v.system === 'root' ? 'Operating system' : 'Swap'}: {levelLabel(v.level)}, {v.level === 'raid1' ? `${v.members.length} copies` : `${v.members.length} disks`} —
+                <span class="badge {statusClass[v.status] ?? 'neutral'}">{v.status}</span>{#if v.sync} {syncLabel[v.sync.action] ?? v.sync.action} {v.sync.percent.toFixed(0)}%{/if}{/each}
+            </div>
+          </div>
+        </div>
+      {/if}
 
       <section class="card table-card">
         <div class="card-head"><h2>Physical disks</h2></div>
@@ -425,6 +443,7 @@
 {#if smart}<TextDialog title={smart.title} text={smart.text} onClose={() => (smart = null)} />{/if}
 
 <style>
+  .system-line { display: flex; gap: 0.75rem; align-items: flex-start; }
   .pools { align-items: stretch; }
   .pool-card { text-align: left; color: var(--text); font-weight: 400; display: flex; flex-direction: column; gap: 0.6rem; cursor: pointer; background: var(--surface); }
   .pool-card:hover:not(:disabled) { filter: none; border-color: var(--border-strong); }

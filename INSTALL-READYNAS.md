@@ -83,7 +83,25 @@ The new `syslinux.cfg` boots `NAS` by default and keeps every RAIDiator entry
 Kernel updates keep working: a hook (`nas-flash-sync`) copies every new kernel
 and initramfs to the flash.
 
-## 8. Hardware checks
+## 8. Move the system onto the disks (like RAIDiator)
+RAIDiator kept its system on partition 1 of every disk (a RAID 1 with 4
+copies) and its swap on partition 2. Once the data volume is adopted, reuse
+them: the NAS then survives a dead disk, and the USB disk becomes a spare.
+```
+scp -i image/id_ed25519 image/nas-system-to-disks nas@<ip>:
+ssh -i image/id_ed25519 nas@<ip> 'sudo install -m 755 nas-system-to-disks /usr/local/sbin/ && cat /proc/mdstat'
+ssh -t -i image/id_ed25519 nas@<ip> 'sudo nas-system-to-disks /dev/md127 /dev/md126'   # RAID 1 system, swap
+```
+It renames the arrays to `system` and `swap`, copies the running system,
+keeps logs in memory (so the disks can sleep), removes GRUB (the flash boots
+the kernel) and rewrites the flash's boot menu: `NAS` (disks, default),
+`NASUSB` (the USB disk, spare), `MemoryTest`. RAIDiator's files and entries
+are removed from the flash (they are in `readynas-flash.img`).
+
+A replacement disk then gets the same three partitions and joins the
+system, swap and data arrays (Volumes & Disks → the volume → Add disk).
+
+## 9. Hardware checks
 In the web interface:
 - **Volumes & Disks**: the old RAIDiator arrays (md0/md1/md2) appear as old
   data: delete / erase them, then create your volume. Check that bays 1-4

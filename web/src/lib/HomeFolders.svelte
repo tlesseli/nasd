@@ -11,7 +11,7 @@
   async function load() {
     const [h, v] = await Promise.all([api.get('/api/homes'), api.get('/api/volumes')])
     homes = h
-    volumes = v.filter((x) => x.mountpoint)
+    volumes = v.filter((x) => x.mountpoint && x.managed && !x.system)
     volume = homes.volume || volumes[0]?.name || ''
   }
   onMount(load)

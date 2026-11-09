@@ -209,6 +209,11 @@ func holdsSystem(d lsblkDev) bool {
 		}
 	}
 	for _, c := range d.Children {
+		// Through a RAID array, the system is spread over several data disks
+		// (RAIDiator's layout): those disks stay data disks.
+		if strings.HasPrefix(c.Type, "raid") {
+			continue
+		}
 		if holdsSystem(c) {
 			return true
 		}

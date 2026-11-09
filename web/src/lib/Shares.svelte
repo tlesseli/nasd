@@ -41,7 +41,7 @@
   }
   onMount(refresh)
 
-  const mountedVolumes = $derived(volumes.filter((v) => v.mountpoint))
+  const mountedVolumes = $derived(volumes.filter((v) => v.mountpoint && v.managed && !v.system))
   const sel = $derived(shares.find((s) => s.name === selected))
   const smbSessions = $derived(services.find((s) => s.unit === 'smbd')?.detail ?? '')
 

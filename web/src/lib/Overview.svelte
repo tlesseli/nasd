@@ -48,8 +48,9 @@
   })
 
   // ---- storage
-  const used = $derived(volumes.reduce((n, v) => n + (v.usedBytes || 0), 0))
-  const total = $derived(volumes.reduce((n, v) => n + (v.totalBytes || 0), 0))
+  const pools = $derived(volumes.filter((v) => !v.system))
+  const used = $derived(pools.reduce((n, v) => n + (v.usedBytes || 0), 0))
+  const total = $derived(pools.reduce((n, v) => n + (v.totalBytes || 0), 0))
   const growth = $derived.by(() => {
     if (history.length < 2) return null
     const sum = (p) => Object.values(p.used ?? {}).reduce((a, b) => a + b, 0)
@@ -85,7 +86,7 @@
 
   // ---- bays
   const bays = $derived(Array.from({ length: BAYS }, (_, i) => ({ n: i + 1, disk: disks.find((d) => d.bay === i + 1) })))
-  const volumeOf = $derived(Object.fromEntries(volumes.flatMap((v) => v.members.map((m) => [m.disk, v.name]))))
+  const volumeOf = $derived(Object.fromEntries(pools.flatMap((v) => v.members.map((m) => [m.disk, v.name]))))
   function diskState(d) {
     const h = d?.health
     if (!h || !h.supported) return 'off'
@@ -263,7 +264,7 @@
               {b.lastRun.status === 'done' ? 'OK' : b.lastRun.status === 'failed' ? 'Failed' : '—'}</span>
           </div>
         {/each}
-        {#each volumes.filter((v) => v.level !== 'raid0') as v (v.device)}
+        {#each pools.filter((v) => v.level !== 'raid0') as v (v.device)}
           <div class="row">
             <span class="prot-icon"><Icon name="shield" size={15} /></span>
             <div class="grow"><div>Volume check · {v.name}</div>

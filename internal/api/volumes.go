@@ -95,6 +95,10 @@ func (s *Server) deleteVolume(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if v.System != "" {
+		writeError(w, http.StatusBadRequest, "this array holds the operating system ("+v.System+"): nasd manages it with the data volume")
+		return
+	}
 	// Typing the name is the "are you really sure" step, enforced server side.
 	if req.Confirm != v.Name {
 		writeError(w, http.StatusBadRequest, "confirmation does not match the volume name")
@@ -125,6 +129,10 @@ func (s *Server) addDisk(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if v.System != "" {
+		writeError(w, http.StatusBadRequest, "this array holds the operating system ("+v.System+"): nasd manages it with the data volume")
+		return
+	}
 	d, err := volumes.ValidateAddDisk(v, req.Disk, all, vols)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -144,6 +152,10 @@ func (s *Server) removeDisk(w http.ResponseWriter, r *http.Request) {
 	}
 	v, ok := s.findVolume(w, r)
 	if !ok {
+		return
+	}
+	if v.System != "" {
+		writeError(w, http.StatusBadRequest, "this array holds the operating system ("+v.System+"): nasd manages it with the data volume")
 		return
 	}
 	m, err := volumes.ValidateRemoveDisk(v, req.Disk)
@@ -170,6 +182,10 @@ func (s *Server) expandVolume(w http.ResponseWriter, r *http.Request) {
 	}
 	v, ok := pick(w, vols, r.PathValue("name"))
 	if !ok {
+		return
+	}
+	if v.System != "" {
+		writeError(w, http.StatusBadRequest, "this array holds the operating system ("+v.System+"): nasd manages it with the data volume")
 		return
 	}
 	d, err := volumes.ValidateExpand(v, req.Disk, all, vols)
@@ -214,6 +230,10 @@ func (s *Server) adoptVolume(w http.ResponseWriter, r *http.Request) {
 	}
 	v, ok := pick(w, vols, r.PathValue("name"))
 	if !ok {
+		return
+	}
+	if v.System != "" {
+		writeError(w, http.StatusBadRequest, "this array holds the operating system ("+v.System+"): nasd manages it with the data volume")
 		return
 	}
 	if err := volumes.ValidateAdopt(v, req.Name, vols); err != nil {

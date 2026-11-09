@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+# nas-system-to-disks SYSTEM_ARRAY SWAP_ARRAY [--yes]
+#
+# Moves the running system from the USB disk onto RAID arrays spread over
+# the data disks, the way RAIDiator kept its own system:
+#
+#   every data disk:  partition 1 ─ RAID 1 "system" (4 copies) ─ ext4 /
+#                     partition 2 ─ RAID   "swap"               ─ swap
+#                     partition 3 ─ RAID 5 "data"  (your files, untouched)
+#
+# The internal flash keeps starting the kernel; only its root= changes. An
+# extra boot entry (NASUSB) still starts the system on the USB disk.
+#
+# Example (RAIDiator's arrays on the ReadyNAS):
+#   sudo nas-system-to-disks /dev/md127 /dev/md126
+#
+# ERASES both arrays (RAIDiator's old system and swap), nothing else.
+set -euo pipefail
+
+die() { echo "error: $*" >&2; exit 1; }
+step() { echo; echo ">> $*"; }
+
+SYS=${1:-}; SWP=${2:-}; YES=${3:-}
+[[ -n $SYS && -n $SWP ]] || die "usage: $0 SYSTEM_ARRAY SWAP_ARRAY [--yes]"
+[[ $(id -u) = 0 ]] || die "run as root (sudo)"
+[[ $(findmnt -no SOURCE /) != /dev/md* ]] || die "the system already runs from a RAID array"
+mountpoint -q /boot/flash || die "/boot/flash isn't mounted: this only works on the ReadyNAS"
+
+members() { mdadm --detail "$1" | awk '/active sync|spare|rebuilding/ {print $NF}'; }
+for md in "$SYS" "$SWP"; do
+  [[ -b $md ]] || die "$md doesn't exist"
+  ! findmnt -S "$md" >/dev/null || die "$md is mounted"
+  ! grep -q "^$(readlink -f "$md") " /proc/swaps || die "$md is in use as swap"
+done
+[[ $(cat /sys/block/"$(basename "$(readlink -f "$SYS")")"/md/level) = raid1 ]] || die "$SYS must be a RAID 1"
+SIZE=$(blockdev --getsize64 "$SYS")
+(( SIZE >= 3 * 1024 ** 3 )) || die "$SYS is too small ($((SIZE / 1024 ** 2)) MB, needs 3 GB)"
+USED=$(df --output=used -B1 / | tail -1)
+(( USED < SIZE * 8 / 10 )) || die "the system ($((USED / 1024 ** 2)) MB) doesn't fit comfortably in $SYS"
+
+echo "System array: $SYS ($(members "$SYS" | tr '\n' ' '))"
+echo "Swap array:   $SWP ($(members "$SWP" | tr '\n' ' '))"
+echo "Both are ERASED. The data arrays are not touched."
+if [[ $YES != --yes ]]; then
+  read -rp 'Type "move" to continue: ' ok
+  [[ $ok = move ]] || die "cancelled"
+fi
+
+# Stop an array and assemble it again under a new name: /dev/md/<name>.
+rename() {
+  local md=$1 name=$2 m
+  m=$(members "$md")
+  mdadm --stop "$md"
+  # shellcheck disable=SC2086
+  mdadm --assemble "/dev/md/$name" --run --update=name --name="$name" $m
+  udevadm settle
+}
+step "renaming the arrays to system and swap"
+rename "$SYS" system
+rename "$SWP" swap
+
+step "creating the filesystem and the swap"
+mkfs.ext4 -F -q -L system /dev/md/system
+mkswap -L swap /dev/md/swap >/dev/null
+ROOT_UUID=$(blkid -s UUID -o value /dev/md/system)
+SWAP_UUID=$(blkid -s UUID -o value /dev/md/swap)
+
+step "copying the system (nasd paused meanwhile)"
+NEW=/mnt/newroot
+mkdir -p $NEW
+mount /dev/md/system $NEW
+trap 'umount -R $NEW 2>/dev/null || true; systemctl start nasd || true' EXIT
+systemctl stop nasd
+# -x: this filesystem only (not /boot/efi, /boot/flash, /data, /proc...).
+rsync -aAXHx --numeric-ids / $NEW/
+systemctl start nasd
+
+step "adapting the new system"
+# fstab: root on the array (noatime: reading files doesn't write), swap,
+# and no more EFI partition of the USB disk.
+OLD_ROOT=$(awk '$2 == "/" {print $1}' $NEW/etc/fstab)
+awk -v r="UUID=$ROOT_UUID" -v s="UUID=$SWAP_UUID" '
+  $2 == "/" { print r " / ext4 noatime,errors=remount-ro 0 1"; print s " none swap sw 0 0"; next }
+  $2 == "/boot/efi" { next }
+  { print }' $NEW/etc/fstab > $NEW/etc/fstab.new
+mv $NEW/etc/fstab.new $NEW/etc/fstab
+# Logs in memory: writing them would keep waking the disks (RAIDiator did
+# the same with noflushd). Lost at reboot; the web UI shows recent ones.
+mkdir -p $NEW/etc/systemd/journald.conf.d
+printf '[Journal]\nStorage=volatile\nRuntimeMaxUse=48M\n' > $NEW/etc/systemd/journald.conf.d/nas.conf
+# mdadm.conf lists the arrays so the boot image assembles the root one.
+grep -v '^ARRAY ' /etc/mdadm/mdadm.conf > $NEW/etc/mdadm/mdadm.conf || true
+# (mdadm prints warnings about RAIDiator's array names on stdout: keep ARRAY lines only)
+mdadm --detail --scan 2>/dev/null | grep '^ARRAY ' >> $NEW/etc/mdadm/mdadm.conf
+
+for d in dev dev/pts proc sys run; do mount --bind /$d $NEW/$d; done
+# The flash boots the kernel: GRUB is not used, and its package would try
+# to install itself on the USB disk at every update.
+# (grub-efi-amd64-signed is "protected": removing it must be allowed explicitly.)
+BOOTPKGS=$(chroot $NEW dpkg-query -W -f '${Package} ${db:Status-Abbrev}\n' 'grub*' 'shim*' 2>/dev/null | awk '$2 == "ii" {print $1}')
+if [[ -n $BOOTPKGS ]]; then
+  # shellcheck disable=SC2086
+  chroot $NEW env DEBIAN_FRONTEND=noninteractive apt-get purge -y -q --allow-remove-essential $BOOTPKGS
+fi
+rm -rf $NEW/boot/grub $NEW/boot/efi/EFI
+# Logs written on the USB disk before the move: not needed any more.
+rm -rf $NEW/var/log/journal/*
+chroot $NEW update-initramfs -u -k all
+
+step "pointing the flash at the new system"
+VER=$(ls -1 $NEW/boot/vmlinuz-* | sort -V | tail -1); VER=${VER##*/vmlinuz-}
+cp $NEW/boot/vmlinuz-"$VER" /boot/flash/nas.krn
+cp $NEW/boot/initrd.img-"$VER" /boot/flash/nas.ird
+CFG=/boot/flash/syslinux.cfg
+USB_APPEND=$(awk '/^label NAS$/ {n = 1} n && /^append/ {sub(/^append +/, ""); print; exit}' $CFG)
+[[ $USB_APPEND == *root=* ]] || die "no NAS entry in $CFG"
+ARGS=${USB_APPEND#*root=*[[:space:]]}   # what follows root=...
+# RAIDiator can't start any more (its system array is now ours), and its
+# boot menu entries are dangerous (FactoryDefault erases every disk): they
+# go. They remain in the flash backup (readynas-flash.img).
+rm -f /boot/flash/{kernel,initrd.gz,root.tlz,supplmnt.tlz,csums.md5}
+# NASUSB keeps the system on the USB disk startable (its own kernel copy).
+cp /boot/vmlinuz-"$VER" /boot/flash/nasusb.krn
+cp /boot/initrd.img-"$VER" /boot/flash/nasusb.ird
+cat > $CFG.new <<EOF
+serial 0 9600 0
+default NAS
+
+# The system on the data disks (RAID 1 "system" on partition 1 of each disk).
+label NAS
+kernel nas.krn
+append initrd=nas.ird root=UUID=$ROOT_UUID $ARGS
+
+# The system on the USB disk, as before the move (spare).
+label NASUSB
+kernel nasusb.krn
+append ${USB_APPEND/initrd=nas.ird/initrd=nasusb.ird}
+
+label MemoryTest
+kernel memtest
+EOF
+mv $CFG.new $CFG
+sync
+
+echo
+echo "Done: the system is now on /dev/md/system ($ROOT_UUID)."
+echo "Old root was $OLD_ROOT. Reboot; the USB disk can then be unplugged (keep it as a spare)."

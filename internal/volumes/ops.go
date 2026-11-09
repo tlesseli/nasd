@@ -2,6 +2,7 @@ package volumes
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -168,6 +169,121 @@ func mountUnit(ctx context.Context, r run.Func, mnt string) (string, error) {
 	return unit, err
 }
 
+// prepareDisk partitions a disk that joins volume v and returns the partition
+// for v. When v's disks also carry other arrays on other partitions (the
+// system and swap, RAIDiator's layout), the new disk gets the same partitions
+// as a healthy member and joins those arrays too: a replaced disk then
+// restores every copy, not just the data.
+func (s *Service) prepareDisk(ctx context.Context, r run.Func, v Volume, d disks.Disk, size int64) (string, error) {
+	var src Member
+	for _, m := range v.Members {
+		if m.State == "in_sync" && m.Device != "/dev/"+m.Disk {
+			src = m
+			break
+		}
+	}
+	all, err := s.List(ctx)
+	if err != nil {
+		return "", err
+	}
+	type join struct {
+		array string
+		part  int
+	}
+	var joins []join
+	for _, o := range all {
+		if o.Device == v.Device {
+			continue
+		}
+		for _, m := range o.Members {
+			if src.Disk != "" && m.Disk == src.Disk {
+				joins = append(joins, join{o.Device, partNumber(m.Device)})
+			}
+		}
+	}
+	if len(joins) == 0 {
+		return s.partition(ctx, r, d, size)
+	}
+
+	// Copy the partition positions of the healthy member's disk.
+	out, err := r(ctx, "sfdisk", "--json", "/dev/"+src.Disk)
+	if err != nil {
+		return "", err
+	}
+	var doc struct {
+		PartitionTable struct {
+			SectorSize int64 `json:"sectorsize"`
+			Partitions []struct {
+				Node  string `json:"node"`
+				Start int64  `json:"start"`
+				Size  int64  `json:"size"`
+			} `json:"partitions"`
+		} `json:"partitiontable"`
+	}
+	if err := json.Unmarshal(out, &doc); err != nil || len(doc.PartitionTable.Partitions) == 0 {
+		return "", fmt.Errorf("cannot read the partitions of %s", src.Disk)
+	}
+	pt := doc.PartitionTable
+	if pt.SectorSize == 0 {
+		pt.SectorSize = 512
+	}
+	args := []string{"-s", d.Path, "--", "mklabel", "gpt"}
+	var nums []int
+	for _, p := range pt.Partitions {
+		if (p.Start+p.Size)*pt.SectorSize > d.SizeBytes {
+			return "", fmt.Errorf("%s is too small: it must be at least as large as %s", d.Name, src.Disk)
+		}
+		n := partNumber(p.Node)
+		nums = append(nums, n)
+		args = append(args, "mkpart", "nas", fmt.Sprintf("%ds", p.Start), fmt.Sprintf("%ds", p.Start+p.Size-1),
+			"set", strconv.Itoa(len(nums)), "raid", "on")
+	}
+	if _, err := r(ctx, "wipefs", "-a", d.Path); err != nil {
+		return "", err
+	}
+	if _, err := r(ctx, "parted", args...); err != nil {
+		return "", err
+	}
+	if _, err := r(ctx, "udevadm", "settle"); err != nil {
+		return "", err
+	}
+	for i := range nums {
+		// The partitions are created in order: the i-th is number i+1.
+		if _, err := r(ctx, "wipefs", "-a", partitionPath(d.Path, i+1)); err != nil {
+			return "", err
+		}
+	}
+	at := func(n int) string { // new disk's partition at the same position as the source's partition n
+		for i, x := range nums {
+			if x == n {
+				return partitionPath(d.Path, i+1)
+			}
+		}
+		return ""
+	}
+	for _, j := range joins {
+		if p := at(j.part); p != "" {
+			// Errors are logged but don't stop the data volume's repair.
+			r(ctx, "mdadm", j.array, "--add", p)
+		}
+	}
+	p := at(partNumber(src.Device))
+	if p == "" {
+		return "", fmt.Errorf("no partition for %s on %s", v.Name, d.Name)
+	}
+	return p, nil
+}
+
+// partNumber: /dev/sda3 -> 3, /dev/nvme0n1p2 -> 2.
+func partNumber(dev string) int {
+	i := len(dev)
+	for i > 0 && dev[i-1] >= '0' && dev[i-1] <= '9' {
+		i--
+	}
+	n, _ := strconv.Atoi(dev[i:])
+	return n
+}
+
 // partition wipes a disk and creates a single GPT partition flagged "raid".
 // Why a partition rather than the whole disk? Other OSes (and installers)
 // see a partitioned disk as "in use" instead of offering to format it, and
@@ -282,7 +398,7 @@ func (s *Service) AddDisk(ctx context.Context, r run.Func, v Volume, d disks.Dis
 	if d.SizeBytes < size {
 		return fmt.Errorf("%s is too small for this volume", d.Name)
 	}
-	p, err := s.partition(ctx, r, d, size)
+	p, err := s.prepareDisk(ctx, r, v, d, size)
 	if err != nil {
 		return err
 	}
@@ -371,7 +487,7 @@ func (s *Service) Expand(ctx context.Context, r run.Func, logf func(string, ...a
 		if d.SizeBytes < size {
 			return fmt.Errorf("%s is too small for this volume", d.Name)
 		}
-		p, err := s.partition(ctx, r, *d, size)
+		p, err := s.prepareDisk(ctx, r, v, *d, size)
 		if err != nil {
 			return err
 		}
