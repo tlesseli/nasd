@@ -66,10 +66,11 @@ type Settings struct {
 	// network). Off = FTPS (FTP over TLS) is required.
 	FTPAllowPlain bool `json:"ftpAllowPlain"`
 	// Discovery announces the NAS (not single shares) on the network.
-	WSDDisabled     bool       `json:"wsdDisabled"`     // Windows (WS-Discovery, wsdd2)
-	BonjourDisabled bool       `json:"bonjourDisabled"` // macOS (Bonjour / mDNS, Avahi)
-	HomeShares      HomeShares `json:"homeShares"`
-	USBCopy         USBCopy    `json:"usbCopy"`
+	WSDDisabled     bool        `json:"wsdDisabled"`     // Windows (WS-Discovery, wsdd2)
+	BonjourDisabled bool        `json:"bonjourDisabled"` // macOS (Bonjour / mDNS, Avahi)
+	HomeShares      HomeShares  `json:"homeShares"`
+	PublicShare     PublicShare `json:"publicShare"`
+	USBCopy         USBCopy     `json:"usbCopy"`
 }
 
 // HomeShares gives every user a private share named after them.
@@ -77,6 +78,16 @@ type HomeShares struct {
 	Enabled bool   `json:"enabled"`
 	Volume  string `json:"volume"`
 	Path    string `json:"path"` // /data/<volume>/homes
+}
+
+// PublicShare is the folder anyone on the network can open without a
+// password (\\nas\public). Writable: guests can also write; otherwise they
+// only read, and users with an account write.
+type PublicShare struct {
+	Enabled  bool   `json:"enabled"`
+	Volume   string `json:"volume"`
+	Path     string `json:"path"` // /data/<volume>/public
+	Writable bool   `json:"writable"`
 }
 
 // USBCopy copies the content of USB disks into a share when plugged in.

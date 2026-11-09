@@ -464,3 +464,61 @@ func TestUnshared(t *testing.T) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
 }
+
+// The public folder: listed, open to guests; read-only for guests unless
+// writable (users with an account can always write); its name is reserved.
+func TestPublicShare(t *testing.T) {
+	s, _, vol := newTestService(t)
+	ctx := context.Background()
+	s.CreateUser(ctx, "alice", "secret-password") // creates the nasusers group
+	if err := s.SetPublicShare(ctx, true, "media", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(vol, "public")); err != nil {
+		t.Fatal("public folder not created")
+	}
+	conf, _ := os.ReadFile(s.SmbConf)
+	for _, want := range []string{"[public]", "path = " + filepath.Join(vol, "public"), "guest ok = yes", "browseable = yes", "read only = yes", "write list = @nasusers"} {
+		if !strings.Contains(string(conf), want) {
+			t.Errorf("smb.conf lacks %q:\n%s", want, conf)
+		}
+	}
+	if err := s.CreateShare(ctx, ShareRequest{Name: "Public", Volume: "media"}); err == nil {
+		t.Error("a share can't take the public folder's name")
+	}
+	if err := s.SetPublicShare(ctx, true, "media", true); err != nil {
+		t.Fatal(err)
+	}
+	conf, _ = os.ReadFile(s.SmbConf)
+	if !strings.Contains(string(conf), "read only = no") || strings.Contains(string(conf), "write list") {
+		t.Errorf("writable public folder:\n%s", conf)
+	}
+	if got := s.Unshared(map[string]string{"media": vol}); slices.ContainsFunc(got, func(f Folder) bool { return f.Name == "public" }) {
+		t.Error("the public folder is not an unshared folder")
+	}
+	s.SetPublicShare(ctx, false, "", false)
+	if conf, _ = os.ReadFile(s.SmbConf); strings.Contains(string(conf), "[public]") {
+		t.Error("disabled public folder still in smb.conf")
+	}
+}
+
+// Only unshared top-level folders can be deleted from the Shares page.
+func TestFolderToDelete(t *testing.T) {
+	s, _, dir := newTestService(t)
+	vol := filepath.Join(dir, "data", "media")
+	os.MkdirAll(filepath.Join(vol, "Old"), 0o755)
+	os.MkdirAll(filepath.Join(vol, "Shared"), 0o755)
+	s.Store.Update(func(st *store.State) error {
+		st.Shares = append(st.Shares, store.Share{Name: "Shared", Volume: "media", Path: filepath.Join(vol, "Shared")})
+		return nil
+	})
+	mounts := map[string]string{"media": vol}
+	if p, err := s.FolderToDelete(mounts, "media", "Old"); err != nil || p != filepath.Join(vol, "Old") {
+		t.Errorf("Old: %q %v", p, err)
+	}
+	for _, name := range []string{"Shared", "..", "../..", "missing", ".hidden", "lost+found"} {
+		if _, err := s.FolderToDelete(mounts, "media", name); err == nil {
+			t.Errorf("%q must not be deletable", name)
+		}
+	}
+}

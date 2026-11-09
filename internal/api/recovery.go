@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"log"
+	"net/http"
 
 	"readynas/internal/auth"
 	"readynas/internal/store"
@@ -61,4 +62,27 @@ func randomPassword() string {
 		out = append(out, chars[int(c)%len(chars)])
 	}
 	return string(out)
+}
+
+// confirmAdmin checks the admin password sent with a destructive request
+// (deleting a share or a folder): a second confirmation by whoever sits at
+// the browser, throttled like the login. Writes the error and returns false
+// when it doesn't match.
+func (s *Server) confirmAdmin(w http.ResponseWriter, r *http.Request, password string) bool {
+	ip := clientIP(r)
+	if s.Throttle != nil && s.Throttle.Blocked(ip) {
+		writeError(w, http.StatusTooManyRequests, "too many failed attempts, try again in a few minutes")
+		return false
+	}
+	st := s.Store.Read()
+	u := st.FindUser(adminUser)
+	if u == nil || !auth.CheckPassword(u.PasswordHash, password) {
+		if s.Throttle != nil {
+			s.Throttle.Fail(ip)
+		}
+		log.Printf("wrong admin password to confirm %s %s from %s", r.Method, r.URL.Path, ip)
+		writeError(w, http.StatusForbidden, "wrong admin password")
+		return false
+	}
+	return true
 }

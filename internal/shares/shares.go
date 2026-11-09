@@ -217,6 +217,70 @@ func (s *Service) SetHomeShares(ctx context.Context, enabled bool, volume string
 	return s.apply(ctx)
 }
 
+// ------------------------------------------------------------ public share
+
+// PublicName is the public folder's share name: \\nas\public.
+const PublicName = "public"
+
+// SetPublicShare switches the public folder on or off. Turning it off only
+// stops sharing it: the folder and its files stay.
+func (s *Service) SetPublicShare(ctx context.Context, enabled bool, volume string, writable bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.Store.Read()
+	p := st.Settings.PublicShare
+	p.Enabled, p.Writable = enabled, writable
+	if enabled {
+		if st.FindShare(PublicName) != nil {
+			return fmt.Errorf("a share named %s already exists: rename or delete it first", PublicName)
+		}
+		mounted, err := s.Mounted(ctx)
+		if err != nil {
+			return err
+		}
+		mnt, ok := mounted[volume]
+		if !ok {
+			return fmt.Errorf("volume %q doesn't exist or isn't mounted", volume)
+		}
+		p.Volume, p.Path = volume, filepath.Join(mnt, PublicName)
+		if err := os.MkdirAll(p.Path, 0o775); err != nil {
+			return err
+		}
+		// Files written through the share belong to nobody:nasusers (Samba
+		// forces it), so guests and users can all change them.
+		uid, err := s.UserID("nobody")
+		if err != nil {
+			return err
+		}
+		gid, err := s.GroupID(Group)
+		if err != nil {
+			return fmt.Errorf("group %s missing: create a user first (%w)", Group, err)
+		}
+		if err := s.Chown(p.Path, uid, gid); err != nil {
+			return err
+		}
+		if err := os.Chmod(p.Path, os.ModeSetgid|0o775); err != nil {
+			return err
+		}
+	}
+	if err := s.Store.Update(func(st *store.State) error { st.Settings.PublicShare = p; return nil }); err != nil {
+		return err
+	}
+	return s.apply(ctx)
+}
+
+// FolderToDelete checks that a folder can be deleted from the Shares page:
+// a top-level folder of a mounted volume that no share (nor the home or
+// public folders) uses, i.e. one listed by Unshared. Returns its path.
+func (s *Service) FolderToDelete(mounts map[string]string, volume, name string) (string, error) {
+	for _, f := range s.Unshared(mounts) {
+		if f.Volume == volume && f.Name == name {
+			return filepath.Join(mounts[volume], name), nil
+		}
+	}
+	return "", fmt.Errorf("%s is not an unshared folder of volume %s", name, volume)
+}
+
 // ensureHome creates a user's private folder: only they can enter it.
 func (s *Service) ensureHome(root, name string) error {
 	dir := filepath.Join(root, name)
@@ -398,7 +462,7 @@ type Folder struct {
 // not the home folders, and with a name valid for a share.
 func (s *Service) Unshared(mounts map[string]string) []Folder {
 	st := s.Store.Read()
-	used := map[string]bool{st.Settings.HomeShares.Path: true}
+	used := map[string]bool{st.Settings.HomeShares.Path: true, st.Settings.PublicShare.Path: true}
 	for _, sh := range st.Shares {
 		used[sh.Path] = true
 	}
@@ -431,6 +495,9 @@ func (s *Service) OnVolume(volume string) []string {
 	st := s.Store.Read()
 	if h := st.Settings.HomeShares; h.Enabled && h.Volume == volume {
 		names = append(names, "home folders")
+	}
+	if p := st.Settings.PublicShare; p.Enabled && p.Volume == volume {
+		names = append(names, "public folder")
 	}
 	for _, sh := range st.Shares {
 		if sh.Volume == volume {
@@ -511,6 +578,9 @@ func validateSettings(req ShareRequest, st store.State) error {
 func (s *Service) CreateShare(ctx context.Context, req ShareRequest) error {
 	if !shareRe.MatchString(req.Name) {
 		return errors.New("share name must be 1-32 characters: letters, digits, '.', '-' or '_'")
+	}
+	if strings.EqualFold(req.Name, PublicName) && s.Store.Read().Settings.PublicShare.Enabled {
+		return fmt.Errorf("%s is the name of the public folder", PublicName)
 	}
 	if slices.Contains(reservedShares, strings.ToLower(req.Name)) {
 		return fmt.Errorf("%q is reserved by Samba", req.Name)

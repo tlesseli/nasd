@@ -15,8 +15,12 @@ package api
 //	POST /api/me/password                    {current, new}  admin password
 
 import (
+	"context"
+	"time"
+
 	"fmt"
 	"net/http"
+	"readynas/internal/jobs"
 	"strings"
 
 	"readynas/internal/auth"
@@ -33,6 +37,7 @@ func (s *Server) shareRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /api/shares", s.requireLogin(s.listShares))
 	mux.Handle("POST /api/shares", s.requireLogin(s.createShare))
 	mux.Handle("GET /api/shares/unshared", s.requireLogin(s.unsharedFolders))
+	mux.Handle("POST /api/folders/delete", s.requireLogin(s.deleteFolder))
 	mux.Handle("POST /api/shares/{name}", s.requireLogin(s.updateShare))
 	mux.Handle("POST /api/shares/{name}/delete", s.requireLogin(s.deleteShare))
 	mux.Handle("GET /api/services", s.requireLogin(s.services))
@@ -101,6 +106,40 @@ func (s *Server) unsharedFolders(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.Shares.Unshared(mounts))
 }
 
+// deleteFolder erases a folder that no share uses (one listed by
+// /api/shares/unshared), files included. Admin password required; runs as a
+// job (a big folder takes a while).
+func (s *Server) deleteFolder(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Volume   string `json:"volume"`
+		Name     string `json:"name"`
+		Password string `json:"password"`
+	}
+	if !readJSON(w, r, &req) || !s.confirmAdmin(w, r, req.Password) {
+		return
+	}
+	vols, err := s.Volumes.List(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	mounts := map[string]string{}
+	for _, v := range vols {
+		if v.Managed && v.Mountpoint != "" {
+			mounts[v.Name] = v.Mountpoint
+		}
+	}
+	path, err := s.Shares.FolderToDelete(mounts, req.Volume, req.Name)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.startJob(w, "Delete folder "+req.Volume+"/"+req.Name, 6*time.Hour, func(ctx context.Context, j *jobs.Job) error {
+		_, err := j.Run(ctx, "rm", "-rf", "--one-file-system", "--", path)
+		return err
+	})
+}
+
 func (s *Server) createShare(w http.ResponseWriter, r *http.Request) {
 	var req shares.ShareRequest
 	if readJSON(w, r, &req) {
@@ -116,6 +155,12 @@ func (s *Server) updateShare(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteShare(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Password string `json:"password"`
+	}
+	if !readJSON(w, r, &req) || !s.confirmAdmin(w, r, req.Password) {
+		return
+	}
 	st := s.Store.Read()
 	if used := backups.SharesUsedBy(&st, r.PathValue("name")); len(used) > 0 {
 		writeError(w, http.StatusBadRequest, "backup jobs use this share ("+strings.Join(used, ", ")+"): delete them first")

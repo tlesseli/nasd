@@ -66,10 +66,34 @@ func renderSmbConf(st store.State) string {
    browseable = no
    read only = no
    valid users = %S
+   # Guests are "nobody": without this, anonymous visitors would see a
+   # "nobody" home folder in the share list.
+   invalid users = nobody
    create mask = 0600
    directory mask = 0700
    vfs objects = fruit streams_xattr
 `)
+	}
+	if p := st.Settings.PublicShare; p.Enabled && p.Path != "" {
+		// Listed when browsing the NAS, open without a password. Everything
+		// written becomes nobody:nasusers, so everyone can change it.
+		b.WriteString(`
+[public]
+   comment = Public folder
+   path = ` + p.Path + `
+   browseable = yes
+   guest ok = yes
+   force user = nobody
+   force group = ` + Group + `
+   create mask = 0664
+   directory mask = 2775
+   vfs objects = fruit streams_xattr
+`)
+		if p.Writable {
+			b.WriteString("   read only = no\n")
+		} else {
+			b.WriteString("   read only = yes\n   write list = @" + Group + "\n")
+		}
 	}
 	for _, sh := range st.Shares {
 		if sh.SMBDisabled {

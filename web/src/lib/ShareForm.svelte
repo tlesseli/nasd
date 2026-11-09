@@ -160,7 +160,7 @@
   <div class="actions">
     {#if editing && onDelete}<button type="button" class="secondary danger-text" onclick={onDelete}>{t('Delete')}</button><span class="spacer"></span>{/if}
     <button type="button" class="secondary" onclick={onCancel}>{bare && editing ? t('Close') : t('Cancel')}</button>
-    <button type="submit" disabled={busy || (!editing && (!name || !volume))}>{busy ? t('Saving…') : editing ? t('Save') : t('Create share')}</button>
+    <button type="submit" disabled={busy || (!editing && (!name || !volume))}>{#if busy}<span class="spinner" aria-hidden="true"></span>{editing ? t('Saving…') : t('Creating share…')}{:else}{editing ? t('Save') : t('Create share')}{/if}</button>
   </div>
 </form>
 

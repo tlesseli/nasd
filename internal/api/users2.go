@@ -23,6 +23,8 @@ import (
 func (s *Server) users2Routes(mux *http.ServeMux) {
 	mux.Handle("GET /api/homes", s.requireLogin(s.getHomes))
 	mux.Handle("POST /api/homes", s.requireLogin(s.setHomes))
+	mux.Handle("GET /api/public", s.requireLogin(s.getPublic))
+	mux.Handle("POST /api/public", s.requireLogin(s.setPublic))
 	mux.Handle("POST /api/users/{name}/quota", s.requireLogin(s.setQuota))
 	mux.Handle("GET /api/quotas", s.requireLogin(s.quotas))
 	mux.Handle("POST /api/volumes/{name}/quotas", s.requireLogin(s.enableQuotas))
@@ -41,6 +43,21 @@ func (s *Server) setHomes(w http.ResponseWriter, r *http.Request) {
 	}
 	if readJSON(w, r, &req) {
 		result(w, s.Shares.SetHomeShares(r.Context(), req.Enabled, req.Volume))
+	}
+}
+
+func (s *Server) getPublic(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.Store.Read().Settings.PublicShare)
+}
+
+func (s *Server) setPublic(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled  bool   `json:"enabled"`
+		Volume   string `json:"volume"`
+		Writable bool   `json:"writable"`
+	}
+	if readJSON(w, r, &req) {
+		result(w, s.Shares.SetPublicShare(r.Context(), req.Enabled, req.Volume, req.Writable))
 	}
 }
 

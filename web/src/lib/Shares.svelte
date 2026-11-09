@@ -4,6 +4,8 @@
   import ShareForm from './ShareForm.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
   import HomeFolders from './HomeFolders.svelte'
+  import PublicFolder from './PublicFolder.svelte'
+  import JobPanel from './JobPanel.svelte'
   import Icon from '../ui/Icon.svelte'
   import { t, N_ } from '../i18n.svelte.js'
 
@@ -15,6 +17,7 @@
   let settings = $state({})
   let services = $state([])
   let unshared = $state([])
+  let job = $state(null) // folder deletion in progress
   let preset = $state(null) // {name, volume}: new share for an existing folder
   let loaded = $state(false)
   let error = $state('')
@@ -73,13 +76,31 @@
     refresh()
   }
 
+  // A folder no share uses: erased with its files (typed name + admin
+  // password). The NAS runs it as a job, shown at the top of the page.
+  function askDeleteFolder(f) {
+    dialog = {
+      title: t('Delete folder {name}?', { name: f.name }),
+      message: t('The folder /{volume}/{name} and every file in it are erased. This cannot be undone.', { volume: f.volume, name: f.name }),
+      confirmLabel: t('Delete folder'),
+      expected: f.name,
+      askPassword: true,
+      onConfirm: async (password) => {
+        job = await api.post('/api/folders/delete', { volume: f.volume, name: f.name, password })
+        dialog = null
+      },
+    }
+  }
+
   function askDelete(sh) {
     dialog = {
       title: t('Stop sharing {name}?', { name: sh.name }),
       message: t('The share disappears from the network. Its files are kept in {path}; create a share with the same name on the same volume to get them back.', { path: sh.path }),
       confirmLabel: t('Delete share'),
-      onConfirm: async () => {
-        await api.post(`/api/shares/${sh.name}/delete`)
+      expected: sh.name,
+      askPassword: true,
+      onConfirm: async (password) => {
+        await api.post(`/api/shares/${sh.name}/delete`, { password })
         dialog = null
         selected = null
         notice = t('Share {name} deleted. Files kept in {path}.', { name: sh.name, path: sh.path })
@@ -119,6 +140,7 @@
 
   {#if error}<p class="error">{error}</p>{/if}
   {#if notice}<p class="notice">{notice}</p>{/if}
+  {#if job}<JobPanel {job} onFinished={refresh} onClose={() => (job = null)} />{/if}
 
   <div class="filters">
     <div class="segmented-btns" role="group" aria-label={t('Filter by service')}>
@@ -170,14 +192,20 @@
                 <tr>
                   <td><Icon name="folder" size={14} /> <strong>{f.name}</strong></td>
                   <td class="mono muted small">/{f.volume}/{f.name}</td>
-                  <td class="right"><button class="secondary" onclick={() => newShareFor(f)}>{t('Share')}</button></td>
+                  <td class="right actions-cell">
+                    <button class="secondary" onclick={() => newShareFor(f)}>{t('Share')}</button>
+                    <button class="link danger-text" onclick={() => askDeleteFolder(f)} disabled={job?.status === 'running'}>{t('Delete')}</button>
+                  </td>
                 </tr>
               {/each}
             </tbody>
           </table>
         </div>
       {/if}
-      <div class="card"><HomeFolders /></div>
+      <div class="grid cols-2">
+        <div class="card"><HomeFolders /></div>
+        <div class="card"><PublicFolder /></div>
+      </div>
       {#if settings.smbDisabled || (!settings.ftpEnabled && shares.some((x) => x.ftp)) || (!settings.rsyncEnabled && shares.some((x) => x.rsync))}
         <p class="hint">{t('Struck-through services are switched off for the whole NAS:')} <a href="#/system/services">{t('System Settings')} → {t('Services')}</a>.</p>
       {/if}
@@ -221,6 +249,8 @@
 {#if dialog}<ConfirmDialog {...dialog} onCancel={() => (dialog = null)} />{/if}
 
 <style>
+  .actions-cell { white-space: nowrap; }
+  .actions-cell .link { margin-left: 0.4rem; }
   .filters { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 14px; flex-wrap: wrap; }
   .filter-input { width: 16rem; max-width: 100%; }
   .share-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
