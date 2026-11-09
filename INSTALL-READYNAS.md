@@ -138,3 +138,19 @@ image/build.sh --dist      # image/nas-dist.raw: nothing personal inside
   Never include NETGEAR files (the flash backup, `*.tlz`, `*.ko`).
 - **Lost access**: `ssh … 'sudo systemctl stop nasd && sudo nasd -reset-admin; sudo systemctl start nasd'`
   prints a new admin password; on the ReadyNAS, holding Backup 10 s does the same.
+
+## If you're locked out
+Several independent ways back in; losing one never loses them all:
+- **Web admin password lost**: hold the **Backup** button 10 s: a new password
+  appears on the front display. Or over SSH:
+  `ssh -i image/id_ed25519 nas@<ip> 'sudo systemctl stop nasd && sudo nasd -reset-admin; sudo systemctl start nasd'`
+- **SSH key lost or removed**: sign in to the web interface and paste a public
+  key in System Settings → Services → Administrator SSH access (e.g.
+  `image/id_ed25519.pub`). The NAS refuses an empty key list, and removing a
+  key asks you to type its name.
+- **Both**: Backup button → web interface → paste your key back.
+- **Nothing works** (button stuck, display dead): start from the USB stick (it
+  has your key and the console password of `image/credentials.txt`), or log in
+  on the serial console with that password.
+Keep `image/id_ed25519` and `image/credentials.txt` safe (and backed up): they
+are your keys to the NAS.

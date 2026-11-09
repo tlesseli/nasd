@@ -17,16 +17,27 @@
   }
   onMount(load)
 
+  // A key's label: its comment (the last word), e.g. "nas-admin".
+  const label = (k) => k.split(/\s+/)[2] || k.split(/\s+/)[1]?.slice(0, 16) + '…'
+
   function save() {
     msg = null
     const keys = text.split('\n').map((k) => k.trim()).filter(Boolean)
+    if (!keys.length) return (msg = { ok: false, text: t('At least one key must stay: without any, nobody could log in over SSH.') })
+    // Keys allowed now that would be removed: say which, and ask to confirm.
+    const norm = (k) => k.split(/\s+/).slice(0, 2).join(' ')
+    const removed = (info.keys ?? []).filter((k) => !keys.some((n) => norm(n) === norm(k)))
+    const lines = [t('{n} key(s) will be able to log in as {user} over SSH, with full control of the system.', { n: keys.length, user: info.user })]
+    if (removed.length) {
+      lines.push(t('Removed: {keys}. Whoever uses it can no longer log in over SSH.', { keys: removed.map(label).join(', ') }))
+      if (removed.some((k) => / nas-admin$/.test(k))) lines.push(t('nas-admin is the key used to install and update this NAS (image/id_ed25519 on your computer): keep it unless you replaced it.'))
+    }
     dialog = {
       title: t('Change the SSH keys?'),
-      message: keys.length
-        ? t('{n} key(s) will be able to log in as {user} over SSH, with full control of the system.', { n: keys.length, user: info.user })
-        : t('No key will be allowed: SSH login as {user} will be impossible.', { user: info.user }),
+      message: lines.join(' '),
+      expected: removed.length ? removed.map(label).join(', ') : '',
       confirmLabel: t('Save keys'),
-      danger: false,
+      danger: removed.length > 0,
       askPassword: true,
       onConfirm: async (password) => {
         await api.post('/api/ssh/keys', { keys, password })

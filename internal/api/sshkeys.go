@@ -83,6 +83,12 @@ func (s *Server) setSSHKeys(w http.ResponseWriter, r *http.Request) {
 		}
 		keys = append(keys, k)
 	}
+	// Never zero keys: SSH is one of the ways back in when the web admin
+	// password is lost, so the owner can't lock themselves out by mistake.
+	if len(keys) == 0 {
+		writeError(w, http.StatusBadRequest, "at least one key must stay: without any, nobody could log in over SSH")
+		return
+	}
 	uid, _ := strconv.Atoi(u.Uid)
 	gid, _ := strconv.Atoi(u.Gid)
 	dir := filepath.Dir(path)
