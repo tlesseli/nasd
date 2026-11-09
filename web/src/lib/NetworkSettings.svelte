@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte'
-  import { api } from '../api.js'
+  import { api, formatBytes } from '../api.js'
 
   let info = $state(null)
   let bondModes = $state([])
@@ -18,11 +18,22 @@
     if (!n.managed) n.dhcp = true
     dnsText = n.dns.join(', ')
   }
+  // Live port status, without touching the form being edited.
+  async function refreshPorts() {
+    const r = await api.get('/api/network').catch(() => null)
+    if (r && info) {
+      info.ports = r.info.ports
+      info.current = r.info.current
+      info.gateway = r.info.gateway
+    }
+  }
   onMount(() => {
     load()
     const t = setInterval(() => (now = Date.now()), 1000)
-    return () => clearInterval(t)
+    const p = setInterval(refreshPorts, 5000)
+    return () => (clearInterval(t), clearInterval(p))
   })
+  const speedText = (mbps) => (mbps >= 1000 ? `${mbps / 1000} Gb/s` : `${mbps} Mb/s`)
 
   async function apply(event) {
     event.preventDefault()
@@ -68,12 +79,36 @@
     </div>
   {/if}
 
-  <div class="card list">
-    {#each info.current as c}
-      <div class="row"><strong>{c.interface}</strong><span class="mono">{c.address}</span><span class="muted small">MTU {c.mtu}</span></div>
+  <div class="ports">
+    {#each info.ports ?? [] as p (p.name)}
+      <div class="card port" class:up={p.link}>
+        <div class="port-head">
+          <!-- An RJ45 socket: lit green when a cable is connected and the link is up. -->
+          <svg class="jack" viewBox="0 0 40 32" aria-hidden="true">
+            <rect x="1" y="1" width="38" height="30" rx="3" class="jack-body" />
+            <path d="M8 8h24v12h-5v5H13v-5H8z" class="jack-hole" />
+            {#each [0, 1, 2, 3, 4, 5, 6, 7] as i}<rect x={10.5 + i * 2.6} y="9" width="1.4" height="4" class="jack-pin" />{/each}
+            <rect x="4" y="25" width="7" height="3" rx="1" class="led-link" />
+            <rect x="29" y="25" width="7" height="3" rx="1" class="led-act" />
+          </svg>
+          <div>
+            <div class="port-title"><strong>{p.label}</strong> <span class="mono muted small">{p.name}</span></div>
+            <div class="small">
+              {#if p.link}<span class="badge good">Connected</span> {p.speedMbps ? speedText(p.speedMbps) : ''}{p.duplex ? ` · ${p.duplex} duplex` : ''}
+              {:else}<span class="badge neutral">No cable</span>{/if}
+            </div>
+          </div>
+        </div>
+        <dl class="port-info small">
+          <dt>Address</dt><dd class="mono">{p.addresses.length ? p.addresses.join(', ') : '—'}{p.master ? ` (via ${p.master})` : ''}</dd>
+          <dt>MAC</dt><dd class="mono">{p.mac}</dd>
+          <dt>Traffic</dt><dd>↓ {formatBytes(p.rxBytes)} · ↑ {formatBytes(p.txBytes)}</dd>
+          <dt>MTU</dt><dd>{p.mtu}{p.driver ? ` · driver ${p.driver}` : ''}</dd>
+        </dl>
+      </div>
     {/each}
-    <div class="row"><strong>Gateway</strong><span class="mono">{info.gateway || '—'}</span></div>
   </div>
+  <p class="small muted gw">Gateway (router): <span class="mono">{info.gateway || '—'}</span></p>
 
   <form class="card create" onsubmit={apply}>
     <label class="check">
@@ -127,3 +162,20 @@
     <p class="hint">After applying you have 90 seconds to confirm. Without confirmation, the previous settings return: a mistake can't lock you out.</p>
   </form>
 {/if}
+
+<style>
+  .ports { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+  .port-head { display: flex; gap: 0.8rem; align-items: center; }
+  .port-title { margin-bottom: 0.2rem; }
+  .jack { width: 44px; height: 36px; flex: none; }
+  .jack-body { fill: var(--surface-2, #2a2d36); stroke: var(--border); }
+  .jack-hole { fill: #0b0d12; }
+  .jack-pin { fill: #b08d3c; }
+  .led-link, .led-act { fill: #3a3d46; }
+  .port.up .led-link { fill: #22a06b; }
+  .port.up .led-act { fill: #e0a43a; }
+  .port-info { display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.8rem; margin: 0.8rem 0 0; }
+  .port-info dt { color: var(--muted); }
+  .port-info dd { margin: 0; overflow-wrap: anywhere; }
+  .gw { margin: 0.6rem 0 1rem; }
+</style>

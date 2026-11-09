@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import { api } from '../api.js'
+  import Gauge from '../ui/Gauge.svelte'
 
   let hw = $state(null)
   let backups = $state([])
@@ -17,6 +18,7 @@
       button = $state.snapshot(hw.button)
       fan = $state.snapshot(hw.fan)
       if (!fan.minPercent) Object.assign(fan, { minPercent: 30, lowTemp: 35, highTemp: 45 })
+      if (!fan.fixedPercent) fan.fixedPercent = 50
       if (!fan.pwm && hw.outputs.length) fan.pwm = hw.outputs[0].id
     }
   }
@@ -70,6 +72,10 @@
   const tierText = { phase: 'startup / shutdown', critical: 'critical problem (blinking)', network: 'network change to confirm',
     ups: 'power cut', feedback: 'button / locate', operation: 'operation in progress', warning: 'warning', routine: 'routine information' }
   const enableText = { 0: 'full speed', 1: 'manual (nasd)', 2: 'automatic (motherboard)' }
+  // The controlled output (or the first one with a fan), for the gauges.
+  let gaugeOut = $derived(hw?.outputs.find((o) => o.id === (hw.fan.pwm || fan?.pwm)) ?? hw?.outputs.find((o) => o.fanRpm >= 0))
+  let rpmMax = $derived(Math.max(hw?.fan.maxRpm || 0, gaugeOut?.fanRpm || 0, 1000))
+  const SAFETY = 50 // °C: fixed speed goes to 100% from there (FixedSafetyTemp)
 </script>
 
 {#if msg}<p class={msg.ok ? 'notice' : 'error'}>{msg.text}</p>{/if}
@@ -139,6 +145,24 @@
   <div class="card create">
     <h2>Fan</h2>
     {#if hw.outputs.length}
+      <div class="gauges">
+        {#if gaugeOut && gaugeOut.fanRpm >= 0}
+          <Gauge label="Fan speed" value={gaugeOut.fanRpm} max={rpmMax} text="{gaugeOut.fanRpm} RPM"
+            warn={gaugeOut.minRpm > 0 && gaugeOut.fanRpm < gaugeOut.minRpm}
+            marks={gaugeOut.minRpm > 0 ? [{ value: gaugeOut.minRpm, label: `alarm below ${gaugeOut.minRpm} RPM` }] : []} />
+        {/if}
+        {#if hw.fanStatus.hottestDisk > 0 || hw.fan.mode}
+          <Gauge label="Hottest disk" value={hw.fanStatus.hottestDisk} min={20} max={70}
+            text={hw.fanStatus.hottestDisk ? `${hw.fanStatus.hottestDisk} °C` : '—'} warn={hw.fanStatus.hottestDisk >= 50}
+            marks={hw.fan.mode === 'curve' ? [{ value: hw.fan.lowTemp, label: `${hw.fan.lowTemp} °C: minimum speed` }, { value: hw.fan.highTemp, label: `${hw.fan.highTemp} °C: full speed` }]
+              : hw.fan.mode === 'fixed' ? [{ value: SAFETY, label: `${SAFETY} °C: full speed` }] : []} />
+        {/if}
+        {#if hw.fanStatus.mode}
+          <Gauge label="Speed set by the NAS" value={hw.fanStatus.percent} text="{hw.fanStatus.percent}%"
+            marks={hw.fan.mode === 'curve' ? [{ value: hw.fan.minPercent, label: `minimum ${hw.fan.minPercent}%` }]
+              : hw.fan.mode === 'fixed' ? [{ value: hw.fan.fixedPercent, label: `chosen ${hw.fan.fixedPercent}%` }] : []} />
+        {/if}
+      </div>
       <table class="members">
         <thead><tr><th>Output</th><th>Chip</th><th>Speed</th><th>Mode</th></tr></thead>
         <tbody>
@@ -154,11 +178,17 @@
         <select bind:value={fan.mode}>
           <option value="">By the motherboard (default)</option>
           <option value="curve">By the NAS, from disk temperatures</option>
+          <option value="fixed">Fixed speed</option>
           <option value="full">Always full speed</option>
         </select>
       </label>
       {#if fan.mode}
         <label>Output <select bind:value={fan.pwm}>{#each hw.outputs as o (o.id)}<option>{o.id}</option>{/each}</select></label>
+      {/if}
+      {#if fan.mode === 'fixed'}
+        <label>Speed: <strong>{fan.fixedPercent}%</strong>
+          <input type="range" min="20" max="100" step="5" bind:value={fan.fixedPercent} /></label>
+        <p class="hint">The fan keeps this speed. If a disk reaches {SAFETY} °C, it goes to full speed until the disk cools down.</p>
       {/if}
       {#if fan.mode === 'curve'}
         <div class="two-cols">
@@ -171,7 +201,7 @@
       {#if hw.fanStatus.mode}
         <p class="small">Now: <strong>{hw.fanStatus.percent}%</strong> · {hw.fanStatus.reason}</p>
       {/if}
-      <div class="actions"><button onclick={() => post('/api/fan', { ...fan, minPercent: +fan.minPercent, lowTemp: +fan.lowTemp, highTemp: +fan.highTemp }, 'Fan settings saved.')}>Save</button></div>
+      <div class="actions"><button onclick={() => post('/api/fan', { ...fan, minPercent: +fan.minPercent, lowTemp: +fan.lowTemp, highTemp: +fan.highTemp, fixedPercent: +fan.fixedPercent }, 'Fan settings saved.')}>Save</button></div>
     {:else}
       <p class="muted small">No controllable fan found. Normal in a virtual machine; on the ReadyNAS the sensor chip's driver must be loaded (milestone 6).</p>
     {/if}
@@ -185,4 +215,5 @@
     background: #1d3fd8; color: #e8f0ff; font-family: ui-monospace, 'DejaVu Sans Mono', monospace; font-size: 1.15rem;
     letter-spacing: 0.08em; line-height: 1.35; white-space: pre; box-shadow: inset 0 0 18px rgb(0 0 0 / 0.35); }
   .lcd.off { background: #101a44; color: #5866a3; }
+  .gauges { display: flex; flex-wrap: wrap; gap: 1.5rem; justify-content: space-around; margin: 0.5rem 0 1rem; }
 </style>

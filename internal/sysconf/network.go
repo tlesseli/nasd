@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,8 +30,57 @@ type NetworkInfo struct {
 	Settings store.NetworkSettings `json:"settings"`
 	Pending  *store.NetworkChange  `json:"pending"`
 	Physical []string              `json:"physical"` // physical interfaces
+	Ports    []Port                `json:"ports"`    // the same, with their link state
 	Current  []CurrentAddr         `json:"current"`
 	Gateway  string                `json:"gateway"`
+}
+
+// Port is a physical network port as the kernel sees it right now.
+type Port struct {
+	Name      string   `json:"name"`  // enp1s0
+	Label     string   `json:"label"` // LAN 1, LAN 2 (in the order of their PCI slots)
+	MAC       string   `json:"mac"`
+	Link      bool     `json:"link"`      // a cable is plugged and the other end answers
+	SpeedMbps int      `json:"speedMbps"` // 0 when unknown (no link)
+	Duplex    string   `json:"duplex"`    // full, half, ""
+	MTU       int      `json:"mtu"`
+	Driver    string   `json:"driver"`
+	Master    string   `json:"master"`    // bond0 when bonded
+	Addresses []string `json:"addresses"` // IPv4, of the port or of its bond
+	RxBytes   int64    `json:"rxBytes"`
+	TxBytes   int64    `json:"txBytes"`
+}
+
+func (s *Service) ports(current []CurrentAddr) []Port {
+	out := []Port{}
+	for i, name := range s.physical() {
+		dir := filepath.Join(s.Sys, "class", "net", name)
+		rd := func(f string) string { b, _ := os.ReadFile(filepath.Join(dir, f)); return strings.TrimSpace(string(b)) }
+		num := func(f string) int64 { n, _ := strconv.ParseInt(rd(f), 10, 64); return n }
+		p := Port{Name: name, Label: fmt.Sprintf("LAN %d", i+1), MAC: rd("address"), Link: rd("carrier") == "1",
+			MTU: int(num("mtu")), RxBytes: num("statistics/rx_bytes"), TxBytes: num("statistics/tx_bytes"), Addresses: []string{}}
+		if p.Link {
+			if sp := num("speed"); sp > 0 && sp < 65535 {
+				p.SpeedMbps = int(sp)
+			}
+			if d := rd("duplex"); d == "full" || d == "half" {
+				p.Duplex = d
+			}
+		}
+		if t, err := os.Readlink(filepath.Join(dir, "device", "driver")); err == nil {
+			p.Driver = filepath.Base(t)
+		}
+		if t, err := os.Readlink(filepath.Join(dir, "master")); err == nil {
+			p.Master = filepath.Base(t)
+		}
+		for _, c := range current {
+			if c.Interface == name || (p.Master != "" && c.Interface == p.Master) {
+				p.Addresses = append(p.Addresses, c.Address)
+			}
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 type CurrentAddr struct {
@@ -61,6 +111,7 @@ func (s *Service) Network(ctx context.Context) NetworkInfo {
 			}
 		}
 	}
+	info.Ports = s.ports(info.Current)
 	if out, err := s.Run(ctx, "ip", "-4", "route", "show", "default"); err == nil {
 		if f := strings.Fields(string(out)); len(f) >= 3 {
 			info.Gateway = f[2]

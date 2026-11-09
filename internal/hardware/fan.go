@@ -50,12 +50,16 @@ type FanStatus struct {
 	Updated     time.Time `json:"updated"`
 }
 
+// FixedSafetyTemp: in "fixed" mode, a disk this hot sends the fan to 100%.
+const FixedSafetyTemp = 50
+
 type PWMOutput struct {
 	ID     string `json:"id"` // hwmon2/pwm1
 	Chip   string `json:"chip"`
 	Value  int    `json:"value"`  // 0-255
 	Enable string `json:"enable"` // 0/1/2...
 	FanRPM int    `json:"fanRpm"` // matching fanN_input, -1 if none
+	MinRPM int    `json:"minRpm"` // the chip's low-speed alarm limit (fanN_min), 0 if none
 }
 
 func NewFan(st *store.Store, d *disks.Service) *Fan {
@@ -80,6 +84,7 @@ func (f *Fan) Outputs() []PWMOutput {
 			if rpm, err := strconv.Atoi(read(chip, "fan"+n+"_input")); err == nil {
 				p.FanRPM = rpm
 			}
+			p.MinRPM, _ = strconv.Atoi(read(chip, "fan"+n+"_min"))
 			out = append(out, p)
 		}
 	}
@@ -90,15 +95,18 @@ func Validate(c store.FanSettings, outputs []PWMOutput) error {
 	switch c.Mode {
 	case "":
 		return nil
-	case "curve", "full":
+	case "curve", "fixed", "full":
 	default:
-		return errors.New("mode must be empty, curve or full")
+		return errors.New("mode must be empty, curve, fixed or full")
 	}
 	if !slices.ContainsFunc(outputs, func(p PWMOutput) bool { return p.ID == c.PWM }) {
 		return fmt.Errorf("unknown fan output %q", c.PWM)
 	}
 	if c.Mode == "curve" && (c.MinPercent < 20 || c.MinPercent > 100 || c.LowTemp < 20 || c.HighTemp > 70 || c.LowTemp >= c.HighTemp) {
 		return errors.New("curve: minimum 20-100%, 20 °C ≤ low < high ≤ 70 °C")
+	}
+	if c.Mode == "fixed" && (c.FixedPercent < 20 || c.FixedPercent > 100) {
+		return errors.New("fixed speed: 20-100%")
 	}
 	return nil
 }
@@ -108,6 +116,7 @@ func (f *Fan) Save(ctx context.Context, c store.FanSettings) error {
 		return err
 	}
 	prev := f.Store.Read().Fan
+	c.MaxRPM = max(c.MaxRPM, prev.MaxRPM) // measured, not a setting
 	if err := f.Store.Update(func(st *store.State) error { st.Fan = c; return nil }); err != nil {
 		return err
 	}
@@ -138,6 +147,11 @@ func Percent(c store.FanSettings, hottest int) int {
 	switch {
 	case c.Mode == "full" || hottest <= 0:
 		return 100 // unknown temperature: be safe
+	case c.Mode == "fixed":
+		if hottest >= FixedSafetyTemp {
+			return 100
+		}
+		return c.FixedPercent
 	case hottest <= c.LowTemp:
 		return c.MinPercent
 	case hottest >= c.HighTemp:
@@ -168,6 +182,10 @@ func (f *Fan) Tick(ctx context.Context) {
 	switch {
 	case c.Mode == "full":
 		f.status.Reason = "always full speed"
+	case c.Mode == "fixed" && hottest >= FixedSafetyTemp:
+		f.status.Reason = fmt.Sprintf("a disk reached %d °C: full speed until it cools down", hottest)
+	case c.Mode == "fixed":
+		f.status.Reason = fmt.Sprintf("fixed speed · hottest disk at %d °C", hottest)
 	case hottest <= 0:
 		f.status.Reason = "no disk temperature available: full speed for safety"
 	default:
@@ -180,6 +198,18 @@ func (f *Fan) Tick(ctx context.Context) {
 	if err := f.set(c.PWM, pct); err != nil {
 		f.status.Reason = "cannot control the fan: " + err.Error()
 		log.Printf("fan: %v", err)
+	}
+	f.learnMaxRPM(c)
+}
+
+// learnMaxRPM remembers the fastest speed seen: the fan's 100%, the top of
+// the gauge. Saved only when it grows by more than 3% (rare writes).
+func (f *Fan) learnMaxRPM(c store.FanSettings) {
+	for _, o := range f.Outputs() {
+		if o.ID == c.PWM && o.FanRPM > c.MaxRPM*103/100 {
+			rpm := o.FanRPM
+			go f.Store.Update(func(st *store.State) error { st.Fan.MaxRPM = max(st.Fan.MaxRPM, rpm); return nil })
+		}
 	}
 }
 

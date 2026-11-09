@@ -225,11 +225,16 @@ type LCDSettings struct {
 
 // FanSettings: who drives the fan.
 type FanSettings struct {
-	Mode       string `json:"mode"`       // "" = the motherboard (default), "curve" = nasd, "full" = always 100%
+	Mode       string `json:"mode"`       // "" = the motherboard (default), "curve" = nasd from disk temperatures, "fixed" = FixedPercent, "full" = always 100%
 	PWM        string `json:"pwm"`        // controlled output, e.g. "hwmon2/pwm1"
 	MinPercent int    `json:"minPercent"` // speed at or below LowTemp
 	LowTemp    int    `json:"lowTemp"`    // °C (hottest disk)
 	HighTemp   int    `json:"highTemp"`   // °C: 100% at or above
+	// FixedPercent: the speed in "fixed" mode (full speed anyway once a disk
+	// reaches FixedSafetyTemp).
+	FixedPercent int `json:"fixedPercent"`
+	// MaxRPM: the fan's speed at 100%, measured (scale of the gauge).
+	MaxRPM int `json:"maxRpm"`
 }
 
 // NetworkSettings: Managed=false leaves the network to the OS (DHCP).
