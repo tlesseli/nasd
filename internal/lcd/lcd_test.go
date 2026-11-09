@@ -26,7 +26,7 @@ func TestFit(t *testing.T) {
 	if got := fit("Sauvegardé → USB à 42°"); got != "Sauvegarde -> US" || len(got) != Width {
 		t.Errorf("%q", got)
 	}
-	if got := fit("ab"); got != "ab              " {
+	if got := fit("ab"); got != "       ab       " { // centered
 		t.Errorf("%q", got)
 	}
 }
@@ -96,7 +96,7 @@ func TestCharLCDOutput(t *testing.T) {
 	c := &CharLCD{Path: path}
 	c.Show(fit("nas-01"), fit("192.168.1.50"), false)
 	got, _ := os.ReadFile(path)
-	if string(got) != "\x1b[Lx0y0;nas-01          \x1b[Lx0y1;192.168.1.50    \x1b[L-" {
+	if string(got) != "\x1b[Lx0y0;     nas-01     \x1b[Lx0y1;  192.168.1.50  \x1b[L-" {
 		t.Errorf("%q", got)
 	}
 }

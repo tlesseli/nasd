@@ -382,9 +382,11 @@ func fit(s string) string {
 		}
 		b.WriteRune(r)
 	}
-	out := b.String()
+	out := strings.TrimSpace(b.String())
 	if len(out) > Width {
 		out = out[:Width]
 	}
-	return out + strings.Repeat(" ", Width-len(out))
+	// Centered on the line (2x16 characters): the extra space, if odd, goes right.
+	left := (Width - len(out)) / 2
+	return strings.Repeat(" ", left) + out + strings.Repeat(" ", Width-len(out)-left)
 }
