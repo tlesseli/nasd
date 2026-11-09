@@ -49,7 +49,13 @@ func main() {
 	flag.Parse()
 	if *lcdMessage != "" {
 		l1, l2, _ := strings.Cut(*lcdMessage, "|")
-		lcd.ShowOnce(lcd.Detect(), l1, l2)
+		out := displayFor(openPanel())
+		lcd.ShowOnce(out, l1, l2)
+		// Run by systemd before nasd starts and after it stops: leave the
+		// display as the boot loader expects it at the next restart.
+		if r, ok := out.(interface{ Release() }); ok {
+			r.Release()
+		}
 		return
 	}
 	if *fansFull {
@@ -126,7 +132,8 @@ func main() {
 	afterBootCheck(st, vols, al)
 
 	loc := hardware.NewLocator()
-	display := lcd.New(lcdCollector(st, vols, dk, mon, pw, btn, loc, jm, *hwmon), lcd.Detect())
+	panel := openPanel()
+	display := lcd.New(lcdCollector(st, vols, dk, mon, pw, btn, loc, jm, *hwmon), displayFor(panel))
 	display.AlwaysOn = func() bool { return st.Read().LCD.AlwaysOn }
 	btn.OnPress = display.Wake
 	log.Printf("front display: %s", display.Out.Name())
@@ -176,6 +183,9 @@ func main() {
 
 	// Stop cleanly on Ctrl-C or `systemctl stop` (SIGTERM).
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	if panel != nil { // before btn.Run: the button reads the panel
+		wirePanel(ctx, panel, dk, loc, btn, display, srv)
+	}
 	defer stop()
 	go bk.RunScheduler(ctx)
 	go mon.Run(ctx)

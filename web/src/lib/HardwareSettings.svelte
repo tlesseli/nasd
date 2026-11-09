@@ -105,13 +105,18 @@
     <h2>Backup button</h2>
     <p class="muted small">The button on the front of the NAS runs backup jobs, one after the other.</p>
     <div class="add">
-      {#if button.device}
+      {#if hw.buttonBuiltIn}
+        <span class="small">The <strong>Backup button</strong> on the front of the NAS is ready: a short press runs the jobs below.
+          <span class="muted">Holding it 10 seconds instead resets the admin password: the new one appears on the front display (for when it is lost).</span></span>
+      {:else if button.device}
         <span class="small">Responds to key <strong>{button.code}</strong> from <strong>{button.device}</strong></span>
       {:else}
         <span class="muted small">Not set up yet: click “Learn”, then press the button on the NAS.</span>
       {/if}
-      <span class="spacer"></span>
-      <button class="secondary" onclick={learn} disabled={learning}>{learning ? 'Press the button now… (30 s)' : 'Learn'}</button>
+      {#if !hw.buttonBuiltIn}
+        <span class="spacer"></span>
+        <button class="secondary" onclick={learn} disabled={learning}>{learning ? 'Press the button now… (30 s)' : 'Learn'}</button>
+      {/if}
     </div>
 
     <fieldset>

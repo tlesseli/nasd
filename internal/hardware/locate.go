@@ -24,7 +24,11 @@ import (
 // (ledmon's ledctl), it is switched on as well.
 
 type Locator struct {
-	Dev    string // /dev
+	Dev string // /dev
+	// LED, when set, blinks the bay's own LED (on the ReadyNAS the bay LEDs
+	// are chipset pins, not wired to disk activity). It returns false when
+	// the disk has no LED (then the reading method is used).
+	LED    func(disk string, blink bool) bool
 	mu     sync.Mutex
 	active map[string]context.CancelFunc
 }
@@ -39,6 +43,25 @@ var locateDiskRe = regexp.MustCompile(`^(sd[a-z]+|nvme[0-9]+n[0-9]+)$`)
 func (l *Locator) Start(disk string, d time.Duration) error {
 	if !locateDiskRe.MatchString(disk) {
 		return errors.New("invalid disk name")
+	}
+	if l.LED != nil {
+		l.Stop(disk)
+		if l.LED(disk, true) {
+			ctx, cancel := context.WithTimeout(context.Background(), d)
+			l.mu.Lock()
+			l.active[disk] = cancel
+			l.mu.Unlock()
+			go func() {
+				<-ctx.Done()
+				l.LED(disk, false)
+				l.mu.Lock()
+				if ctx.Err() == context.DeadlineExceeded {
+					delete(l.active, disk)
+				}
+				l.mu.Unlock()
+			}()
+			return nil
+		}
 	}
 	path := l.Dev + "/" + disk
 	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_DIRECT, 0)

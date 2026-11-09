@@ -37,6 +37,7 @@ func (s *Server) getHardware(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"button":        st.Button,
 		"buttonRunning": s.Button.Running(),
+		"buttonBuiltIn": s.Button.BuiltIn(),
 		"fan":           st.Fan,
 		"fanStatus":     s.Fan.Status(),
 		"outputs":       s.Fan.Outputs(),

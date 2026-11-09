@@ -116,3 +116,22 @@ func TestSPAFallback(t *testing.T) {
 		t.Fatalf("unknown route should serve index.html: %s", w.Body)
 	}
 }
+
+func TestRandomPassword(t *testing.T) {
+	seen := map[string]bool{}
+	for range 50 {
+		pw := randomPassword()
+		if len(pw) != 11 || pw[5] != '-' || len(pw) < minPasswordLength {
+			t.Fatalf("bad format %q", pw)
+		}
+		for _, c := range strings.ReplaceAll(pw, "-", "") {
+			if strings.ContainsRune("01ilo", c) {
+				t.Fatalf("look-alike character in %q", pw)
+			}
+		}
+		seen[pw] = true
+	}
+	if len(seen) < 50 {
+		t.Fatal("passwords repeat")
+	}
+}

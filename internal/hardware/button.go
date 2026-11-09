@@ -51,6 +51,13 @@ type Button struct {
 
 	// OnPress is called when the configured button is pressed (wakes the display).
 	OnPress func()
+	// GPIO, when set, reads the built-in button directly (true = pressed):
+	// the ReadyNAS's Backup button is a chipset pin, not an input device.
+	// Holding it HoldReset calls OnLongPress instead of running the jobs;
+	// OnHolding(seconds left) is called every second meanwhile.
+	GPIO        func() bool
+	OnLongPress func()
+	OnHolding   func(left int)
 
 	mu       sync.Mutex
 	cur      int // job being run (1-based) while running
@@ -67,7 +74,59 @@ func NewButton(st *store.Store, b *backups.Service, j *jobs.Manager) *Button {
 }
 
 // Run reads all input devices, rescanning every 30 s for new ones.
+// HoldReset: how long to hold the built-in button to reset the admin password.
+const HoldReset = 10 * time.Second
+
+// BuiltIn reports whether the button is read from the board (no setup).
+func (b *Button) BuiltIn() bool { return b.GPIO != nil }
+
+// pollGPIO watches the built-in button: a short press runs the jobs (on
+// release), a long hold calls OnLongPress once.
+func (b *Button) pollGPIO(ctx context.Context) {
+	t := time.NewTicker(50 * time.Millisecond)
+	defer t.Stop()
+	var since time.Time
+	fired, lastLeft := false, -1
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		now := time.Now()
+		switch pressed := b.GPIO(); {
+		case pressed && since.IsZero():
+			since, fired, lastLeft = now, false, -1
+		case pressed && !fired:
+			held := now.Sub(since)
+			if held >= HoldReset {
+				fired = true
+				if b.OnLongPress != nil {
+					b.OnLongPress()
+				}
+			} else if left := int((HoldReset - held + time.Second - 1) / time.Second); held >= 2*time.Second && left != lastLeft {
+				lastLeft = left
+				if b.OnHolding != nil {
+					b.OnHolding(left)
+				}
+			}
+		case !pressed && !since.IsZero():
+			short := !fired
+			since = time.Time{}
+			if short {
+				b.HandlePress(KeyPress{Device: builtInDevice})
+			}
+		}
+	}
+}
+
+// builtInDevice names the board's button in KeyPress and the settings.
+const builtInDevice = "built-in Backup button"
+
 func (b *Button) Run(ctx context.Context) {
+	if b.GPIO != nil {
+		go b.pollGPIO(ctx)
+	}
 	for {
 		paths, _ := filepath.Glob(filepath.Join(b.Input, "event*"))
 		for _, p := range paths {
@@ -131,7 +190,7 @@ func (b *Button) HandlePress(k KeyPress) {
 	}
 	b.mu.Unlock()
 	cfg := b.Store.Read().Button
-	if cfg.Device != "" && k.Device == cfg.Device && k.Code == cfg.Code {
+	if k.Device == builtInDevice || (cfg.Device != "" && k.Device == cfg.Device && k.Code == cfg.Code) {
 		if b.OnPress != nil {
 			b.OnPress()
 		}

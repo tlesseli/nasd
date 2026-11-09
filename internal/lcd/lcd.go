@@ -101,12 +101,25 @@ type Engine struct {
 	snap      Snapshot
 	phase     [2]string
 	wakeUntil time.Time
+	// notice: a message shown above everything but startup/shutdown until
+	// noticeUntil (a new admin password, "keep holding" while resetting).
+	notice      [2]string
+	noticeUntil time.Time
 	frame     Frame
 	shown     Frame
 }
 
 func New(collect func(context.Context) Snapshot, out Output) *Engine {
 	return &Engine{Collect: collect, Out: out, Now: time.Now, AlwaysOn: func() bool { return false }}
+}
+
+// Notice shows a message for d, above everything but startup/shutdown,
+// with the backlight on. A zero d clears it.
+func (e *Engine) Notice(line1, line2 string, d time.Duration) {
+	e.mu.Lock()
+	e.notice, e.noticeUntil = [2]string{line1, line2}, e.Now().Add(d)
+	e.mu.Unlock()
+	e.render()
 }
 
 // SetPhase shows a startup/shutdown message above everything ("" clears it).
@@ -173,6 +186,7 @@ func (e *Engine) compute(now time.Time) Frame {
 		screens []screen
 	}{
 		{"phase", phaseScreens(e.phase)},
+		{"notice", e.noticeScreens(now)},
 		{"critical", problemScreens(s, "critical")},
 		{"network", networkScreens(s, now)},
 		{"ups", upsScreens(s)},
@@ -257,6 +271,13 @@ func upsScreens(s Snapshot) []screen {
 		return nil
 	}
 	return []screen{{"ON UPS BATTERY", fmt.Sprintf("%d%%  %d min left", s.UPS.Charge, s.UPS.RuntimeMin)}}
+}
+
+func (e *Engine) noticeScreens(now time.Time) []screen {
+	if now.Before(e.noticeUntil) {
+		return []screen{e.notice}
+	}
+	return nil
 }
 
 func feedbackScreens(s Snapshot) []screen {

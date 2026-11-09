@@ -56,6 +56,7 @@ var Kinds = []Kind{
 	{"system_started", "The NAS started", "info", false},
 	{"power_schedule", "Scheduled power off", "info", false},
 	{"power_action", "Restart or shutdown requested", "info", false},
+	{"admin_reset", "The admin password was reset at the NAS", "warning", true},
 }
 
 // Severity of an event kind ("critical", "warning" or "info").
