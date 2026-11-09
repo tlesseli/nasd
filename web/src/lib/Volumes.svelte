@@ -28,6 +28,7 @@
   let dialog = $state(null) // props for ConfirmDialog, or null
   let addChoice = $state({}) // volume name -> chosen disk
 
+  let adoptName = $state('data')
   async function refresh() {
     try {
       ;[volumes, disks] = await Promise.all([api.get('/api/volumes'), api.get('/api/disks')])
@@ -122,7 +123,7 @@
       message: `This unmounts ${v.mountpoint || 'the volume'}, destroys the RAID and erases ${v.members.map((m) => m.disk).join(', ')}. All files on it are lost.`,
       expected: v.name,
       confirmLabel: 'Delete volume',
-      onConfirm: () => startJob(`/api/volumes/${v.name}/delete`, { confirm: v.name }),
+      onConfirm: () => startJob(`/api/volumes/${encodeURIComponent(v.name)}/delete`, { confirm: v.name }),
     }
   }
 
@@ -136,7 +137,7 @@
           ? `${m.disk} is a spare; the volume won't be affected.`
           : `${m.disk} will be marked as failed and taken out. ${v.name} keeps working but becomes degraded until you add a replacement disk.`,
       confirmLabel: 'Remove disk',
-      onConfirm: () => startJob(`/api/volumes/${v.name}/remove`, { disk: m.disk }),
+      onConfirm: () => startJob(`/api/volumes/${encodeURIComponent(v.name)}/remove`, { disk: m.disk }),
     }
   }
 
@@ -251,6 +252,7 @@
               <span class="dot" class:warn={statusClass[v.status] === 'warn'} class:bad={statusClass[v.status] === 'bad'}></span>
               <span class="mono pool-name">{v.name}</span>
               <span class="spacer"></span>
+              {#if !v.managed && !v.mountpoint}<span class="badge neutral">Found</span>{/if}
               <span class="badge {statusClass[v.status] ?? 'neutral'}">{v.status[0].toUpperCase() + v.status.slice(1)}</span>
             </div>
             <div class="muted small">{levelLabel(v.level)} · {v.raidDisks} × {formatBytes(perDisk(v))} · {v.filesystem || 'no filesystem'}</div>
@@ -350,10 +352,24 @@
         {#if v.status === 'degraded' && missing(v) > 0}
           <p class="warn-box">A disk is missing: the volume has no redundancy left. Add a disk to start the rebuild.</p>
         {/if}
+        {#if !v.managed && !v.mountpoint}
+          {#if v.filesystem === 'ext4' || v.filesystem === 'btrfs'}
+            <div class="notice-box">
+              <p><strong>Found on the disks.</strong> This volume was made by another system (e.g. the original ReadyNAS OS){v.lv ? `, with LVM (${v.lv})` : ''}. Use it as is: its files stay where they are.</p>
+              <p class="muted small">The array gets the name below, its {v.filesystem} filesystem is checked, then mounted. Then create shares on it, one per existing folder you want to share.</p>
+              <div class="add">
+                <label>Name <input bind:value={adoptName} placeholder="data" maxlength="16" /></label>
+                <button onclick={() => run(() => startJob(`/api/volumes/${encodeURIComponent(v.name)}/adopt`, { name: adoptName }))} disabled={busy || !adoptName}>Use this volume</button>
+              </div>
+            </div>
+          {:else}
+            <p class="hint">Made by another system ({v.filesystem || 'no filesystem'}): nothing to mount. Delete it to reuse its disk space.</p>
+          {/if}
+        {/if}
         {#if v.canGrowFS}
           <div class="warn-box">
             <p>The filesystem uses only {formatBytes(v.totalBytes)} of the {formatBytes(v.sizeBytes)} volume.</p>
-            <button class="secondary" onclick={() => run(() => startJob(`/api/volumes/${v.name}/grow-fs`, {}))} disabled={busy}>Grow filesystem</button>
+            <button class="secondary" onclick={() => run(() => startJob(`/api/volumes/${encodeURIComponent(v.name)}/grow-fs`, {}))} disabled={busy}>Grow filesystem</button>
           </div>
         {/if}
 

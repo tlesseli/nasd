@@ -224,6 +224,30 @@ func (s *Service) Delete(ctx context.Context, r run.Func, v Volume) error {
 	r(ctx, "systemctl", "daemon-reload")
 	os.Remove(filepath.Join(s.MountRoot, v.Name)) // only succeeds if empty, which it is once unmounted
 
+	// Other arrays can live on other partitions of the same disks (RAIDiator
+	// put its system, swap and data on partitions 1, 2 and 3 of every disk):
+	// those disks keep their partition table.
+	all, err := s.List(ctx)
+	if err != nil {
+		return fmt.Errorf("cannot check which disks other volumes use: %w", err)
+	}
+	shared := map[string]bool{}
+	for _, o := range all {
+		if o.Device == v.Device {
+			continue
+		}
+		for _, m := range o.Members {
+			shared[m.Disk] = true
+		}
+	}
+
+	if v.VG != "" {
+		// LVM sits between the RAID and the filesystem: release it first,
+		// otherwise the array is busy.
+		if _, err := r(ctx, "vgchange", "-an", v.VG); err != nil {
+			return err
+		}
+	}
 	if _, err := r(ctx, "mdadm", "--stop", v.Device); err != nil {
 		return err
 	}
@@ -232,7 +256,7 @@ func (s *Service) Delete(ctx context.Context, r run.Func, v Volume) error {
 	for _, m := range v.Members {
 		r(ctx, "mdadm", "--zero-superblock", m.Device)
 		r(ctx, "wipefs", "-a", m.Device)
-		if m.Device != "/dev/"+m.Disk {
+		if m.Device != "/dev/"+m.Disk && !shared[m.Disk] {
 			r(ctx, "wipefs", "-a", "/dev/"+m.Disk)
 		}
 	}
@@ -369,7 +393,7 @@ func (s *Service) Expand(ctx context.Context, r run.Func, logf func(string, ...a
 	if !ok {
 		return errors.New("volume disappeared during the reshape")
 	}
-	grown.Mountpoint, grown.Filesystem = v.Mountpoint, v.Filesystem
+	grown.Mountpoint, grown.Filesystem, grown.VG, grown.LV = v.Mountpoint, v.Filesystem, v.VG, v.LV
 	return s.GrowFS(ctx, r, grown)
 }
 
@@ -410,10 +434,20 @@ func (s *Service) GrowFS(ctx context.Context, r run.Func, v Volume) error {
 	if v.Mountpoint == "" {
 		return errors.New("the volume must be mounted")
 	}
+	if v.LV != "" {
+		// Through LVM: the physical volume (the array) grows first, then the
+		// logical volume takes the free space, then the filesystem.
+		if _, err := r(ctx, "pvresize", v.Device); err != nil {
+			return err
+		}
+		if out, err := r(ctx, "lvextend", "-l", "+100%FREE", v.LV); err != nil && !strings.Contains(string(out), "matches existing size") {
+			return err
+		}
+	}
 	var err error
 	switch v.Filesystem {
 	case "ext4":
-		_, err = r(ctx, "resize2fs", v.Device)
+		_, err = r(ctx, "resize2fs", v.FSDevice())
 	case "btrfs":
 		_, err = r(ctx, "btrfs", "filesystem", "resize", "max", v.Mountpoint)
 	default:

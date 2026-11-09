@@ -58,6 +58,7 @@ packages:
   - wsdd2
   - avahi-daemon
   - parted
+  - lvm2                # volumes made by RAIDiator: RAID → LVM → ext4
   - rsync
   - exfatprogs
   - dosfstools

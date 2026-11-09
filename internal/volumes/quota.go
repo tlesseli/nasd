@@ -35,7 +35,7 @@ func (s *Service) EnableQuotas(ctx context.Context, r run.Func, v Volume) error 
 	}
 	// Whatever happens next, mount it back.
 	defer r(context.Background(), "systemctl", "start", unit)
-	if _, err := r(ctx, "tune2fs", "-O", "quota", "-Q", "usrquota", v.Device); err != nil {
+	if _, err := r(ctx, "tune2fs", "-O", "quota", "-Q", "usrquota", v.FSDevice()); err != nil {
 		return err
 	}
 	if err := s.setFstab(v.Name, fstabLine(v.UUID, mnt, "ext4")); err != nil {

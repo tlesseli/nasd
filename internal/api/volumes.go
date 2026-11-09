@@ -38,6 +38,7 @@ func (s *Server) volumeRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/volumes/{name}/remove", s.requireLogin(s.removeDisk))
 	mux.Handle("POST /api/volumes/{name}/expand", s.requireLogin(s.expandVolume))
 	mux.Handle("POST /api/volumes/{name}/grow-fs", s.requireLogin(s.growFS))
+	mux.Handle("POST /api/volumes/{name}/adopt", s.requireLogin(s.adoptVolume))
 	mux.Handle("POST /api/disks/{name}/erase", s.requireLogin(s.eraseDisk))
 	mux.Handle("GET /api/jobs", s.requireLogin(s.listJobs))
 	mux.Handle("GET /api/jobs/{id}", s.requireLogin(s.getJob))
@@ -194,6 +195,34 @@ func (s *Server) growFS(w http.ResponseWriter, r *http.Request) {
 	}
 	s.startJob(w, "Grow filesystem of "+v.Name, time.Hour, func(ctx context.Context, j *jobs.Job) error {
 		return s.Volumes.GrowFS(ctx, j.Run, v)
+	})
+}
+
+// adoptVolume takes over a volume found on the disks (made by RAIDiator or
+// another system): renamed, checked and mounted, files untouched.
+func (s *Server) adoptVolume(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	vols, err := s.Volumes.List(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	v, ok := pick(w, vols, r.PathValue("name"))
+	if !ok {
+		return
+	}
+	if err := volumes.ValidateAdopt(v, req.Name, vols); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// e2fsck reads the whole filesystem's metadata: allow for big volumes.
+	s.startJob(w, "Use volume "+v.Name+" as "+req.Name, 6*time.Hour, func(ctx context.Context, j *jobs.Job) error {
+		return s.Volumes.Adopt(ctx, j.Run, v, req.Name)
 	})
 }
 

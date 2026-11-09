@@ -50,7 +50,7 @@ func (s *Service) CheckFilesystem(ctx context.Context, r run.Func, v Volume) (bo
 		_, err := r(ctx, "btrfs", "scrub", "start", "-B", v.Mountpoint)
 		return false, err
 	case "ext4":
-		_, err := r(ctx, "tune2fs", "-c", "1", "-C", "2", v.Device)
+		_, err := r(ctx, "tune2fs", "-c", "1", "-C", "2", v.FSDevice())
 		return true, err
 	}
 	return false, fmt.Errorf("don't know how to check %q", v.Filesystem)
@@ -58,6 +58,6 @@ func (s *Service) CheckFilesystem(ctx context.Context, r run.Func, v Volume) (bo
 
 // ResetBootCheck restores the normal mount count after a boot-time check.
 func (s *Service) ResetBootCheck(ctx context.Context, r run.Func, v Volume) error {
-	_, err := r(ctx, "tune2fs", "-c", "-1", v.Device)
+	_, err := r(ctx, "tune2fs", "-c", "-1", v.FSDevice())
 	return err
 }

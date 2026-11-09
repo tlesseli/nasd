@@ -88,6 +88,8 @@ p { margin: 0.4rem 0; }
 .hint { font-weight: 400; font-size: 0.8rem; color: var(--muted); margin: 0; }
 .notice { padding: 0.6rem 0.9rem; border: 1px solid var(--border); border-left: 3px solid var(--good); border-radius: var(--radius-sm); background: var(--surface); margin: 0 0 1rem; }
 .warn-box { margin: 0; padding: 0.7rem 0.9rem; border-radius: var(--radius-sm); border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent); background: var(--warn-bg); }
+.notice-box { margin: 0; padding: 0.7rem 0.9rem; border-radius: var(--radius-sm); border: 1px solid color-mix(in srgb, var(--info) 35%, transparent); background: var(--info-bg); display: flex; flex-direction: column; gap: 0.5rem; }
+.notice-box p { margin: 0; }
 
 /* ------------------------------------------------------------------ layout */
 .shell { display: grid; grid-template-columns: var(--sidebar) 1fr; min-height: 100vh; }

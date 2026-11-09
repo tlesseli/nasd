@@ -297,3 +297,50 @@ func TestRepquotaAndMountOptions(t *testing.T) {
 		t.Errorf("ext4 fstab line must enforce quotas: %s", l)
 	}
 }
+
+// Deleting an array must not wipe the partition table of disks that hold
+// another array on another partition (RAIDiator's layout: system, swap and
+// data arrays on partitions 1, 2 and 3 of the same disks).
+func TestDeleteKeepsSharedDisks(t *testing.T) {
+	s, rec := newTestService(t)
+	md := filepath.Join(s.Sys, "block", "md126", "md")
+	put := func(path, content string) {
+		os.MkdirAll(filepath.Dir(path), 0o755)
+		os.WriteFile(path, []byte(content+"\n"), 0o644)
+	}
+	put(filepath.Join(s.Sys, "block", "md126", "size"), "1000")
+	for f, v := range map[string]string{"array_state": "clean", "level": "raid1", "raid_disks": "2", "degraded": "0", "sync_action": "idle"} {
+		put(filepath.Join(md, f), v)
+	}
+	for dev, slot := range map[string]string{"sda3": "0", "sdc3": "1"} {
+		put(filepath.Join(md, "dev-"+dev, "state"), "in_sync")
+		put(filepath.Join(md, "dev-"+dev, "slot"), slot)
+		os.Symlink("../../../devices/pci/ata1/block/"+dev[:3]+"/"+dev, filepath.Join(md, "dev-"+dev, "block"))
+	}
+	vols, err := s.List(context.Background())
+	if err != nil || len(vols) != 2 {
+		t.Fatalf("want 2 volumes, got %d (%v)", len(vols), err)
+	}
+	var media Volume
+	for _, v := range vols {
+		if v.Device == "/dev/md127" {
+			media = v
+		}
+	}
+	media.Mountpoint = ""
+	if err := s.Delete(context.Background(), rec.run, media); err != nil {
+		t.Fatal(err)
+	}
+	all := strings.Join(rec.cmds, "\n")
+	for _, keep := range []string{"wipefs -a /dev/sda\n", "wipefs -a /dev/sdc\n"} {
+		if strings.Contains(all+"\n", keep) {
+			t.Errorf("%q must not run: the disk holds md126 too\n%s", strings.TrimSpace(keep), all)
+		}
+	}
+	if !strings.Contains(all+"\n", "wipefs -a /dev/sdd\n") {
+		t.Errorf("sdd is only in md127: its partition table should be wiped\n%s", all)
+	}
+	if !strings.Contains(all, "wipefs -a /dev/sda1") {
+		t.Errorf("the member partition itself must be wiped\n%s", all)
+	}
+}

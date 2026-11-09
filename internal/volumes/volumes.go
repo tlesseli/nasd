@@ -66,6 +66,23 @@ type Volume struct {
 	LastSyncAction string `json:"lastSyncAction"` // check, repair, resync, recover...
 	MismatchCount  int64  `json:"mismatchCount"`  // blocks that didn't match their parity/mirror
 	Quotas         bool   `json:"quotas"`         // per-user quotas enforced (ext4 mounted with usrquota)
+	// LVM between the RAID and the filesystem (volumes made by RAIDiator):
+	// the volume group, and the logical volume holding the filesystem.
+	VG string `json:"vg,omitempty"`
+	LV string `json:"lv,omitempty"`
+	// Managed: nasd mounts it (it has nasd's fstab entry). Otherwise the
+	// volume was found on the disks (made by another system) and can be
+	// adopted: see Adopt.
+	Managed bool `json:"managed"`
+}
+
+// FSDevice is the block device holding the filesystem: the array itself,
+// or its LVM logical volume.
+func (v Volume) FSDevice() string {
+	if v.LV != "" {
+		return v.LV
+	}
+	return v.Device
 }
 
 // Level describes a RAID level: minimum disks, usable capacity (in number
@@ -258,12 +275,17 @@ func (s *Service) fillNameAndFS(ctx context.Context, v *Volume) {
 	}
 	b := doc.Blockdevices[0]
 	v.Filesystem, v.UUID = deref(b.FSType), deref(b.UUID)
-	for _, m := range b.Mountpoints {
+	mounts := b.Mountpoints
+	if v.Filesystem == "LVM2_member" {
+		mounts = s.fillLVM(ctx, v)
+	}
+	for _, m := range mounts {
 		if m != nil && *m != "" {
 			v.Mountpoint = *m
 			break
 		}
 	}
+	v.Managed = v.Name != "" && s.hasFstabEntry(v.Name)
 	if v.Mountpoint != "" && s.ProcMounts != "" {
 		v.Quotas = mountHasOption(s.ProcMounts, v.Mountpoint, "usrquota")
 	}
@@ -278,6 +300,54 @@ func (s *Service) fillNameAndFS(ctx context.Context, v *Volume) {
 			v.CanGrowFS = v.Sync == nil && v.TotalBytes > 0 && float64(v.TotalBytes) < 0.9*float64(v.SizeBytes)
 		}
 	}
+}
+
+// fillLVM looks through an LVM layer: with a single logical volume (how
+// RAIDiator set its volumes up), the filesystem on it is the volume's. The
+// logical volume only exists once LVM activated it (at boot, or with
+// "vgchange -ay").
+func (s *Service) fillLVM(ctx context.Context, v *Volume) []*string {
+	if out, err := s.Run(ctx, "pvs", "--noheadings", "-o", "vg_name", v.Device); err == nil {
+		v.VG = strings.TrimSpace(string(out))
+	}
+	out, err := s.Run(ctx, "lsblk", "--json", "--bytes", "--tree", "-o", "PATH,TYPE,FSTYPE,UUID,MOUNTPOINTS", v.Device)
+	if err != nil {
+		return nil
+	}
+	type dev struct {
+		Path        string    `json:"path"`
+		Type        string    `json:"type"`
+		FSType      *string   `json:"fstype"`
+		UUID        *string   `json:"uuid"`
+		Mountpoints []*string `json:"mountpoints"`
+		Children    []dev     `json:"children"`
+	}
+	var doc struct {
+		Blockdevices []dev `json:"blockdevices"`
+	}
+	if json.Unmarshal(out, &doc) != nil || len(doc.Blockdevices) == 0 {
+		return nil
+	}
+	// Logical volumes are children of the array (some lsblk versions list
+	// them next to it instead).
+	var lvs []dev
+	for _, c := range append(doc.Blockdevices[1:], doc.Blockdevices[0].Children...) {
+		if c.Type == "lvm" {
+			lvs = append(lvs, c)
+		}
+	}
+	if len(lvs) != 1 {
+		return nil // inactive, or several logical volumes: shown as LVM, left alone
+	}
+	lv := lvs[0]
+	v.LV, v.Filesystem, v.UUID = lv.Path, deref(lv.FSType), deref(lv.UUID)
+	return lv.Mountpoints
+}
+
+// hasFstabEntry: nasd's marker for this volume is in fstab.
+func (s *Service) hasFstabEntry(name string) bool {
+	data, _ := os.ReadFile(s.Fstab)
+	return slices.Contains(strings.Split(string(data), "\n"), "# nasd:volume="+name)
 }
 
 // mountHasOption reads the kernel's mount table: "dev mountpoint fstype opts ...".
