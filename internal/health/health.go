@@ -50,8 +50,8 @@ func Sensors(sys string) []Sensor {
 				continue // voltages, power... not shown
 			}
 			v, err := strconv.ParseFloat(readStr(chip, base+"_input"), 64)
-			if err != nil {
-				continue
+			if err != nil || (kind == "temp" && v <= -100000) {
+				continue // -128 °C: nothing wired to that sensor input (IT8721F temp3)
 			}
 			s := Sensor{ID: filepath.Base(chip) + "/" + base, Chip: name, Kind: kind, Value: v / scale,
 				Label: readStr(chip, base+"_label")}

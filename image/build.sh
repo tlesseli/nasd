@@ -78,6 +78,16 @@ write_files:
       Name=en* eth*
       [Network]
       DHCP=yes
+  # The ReadyNAS Ultra's sensor chip (IT8721F: fan speed and control).
+  - path: /etc/modules-load.d/nas.conf
+    content: |
+      it87
+  # Two network ports, often only one plugged in: online as soon as one is.
+  - path: /etc/systemd/system/systemd-networkd-wait-online.service.d/any.conf
+    content: |
+      [Service]
+      ExecStart=
+      ExecStart=/usr/lib/systemd/systemd-networkd-wait-online --any --timeout=60
   # First boot on the real disk: grow the system partition to the whole disk.
   - path: /usr/local/sbin/nas-firstboot
     permissions: '0755'
