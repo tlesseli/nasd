@@ -9,6 +9,7 @@
   import HardwareSettings from './HardwareSettings.svelte'
   import ServicesSettings from './ServicesSettings.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
+  import About from './About.svelte'
   import { t, N_ } from '../i18n.svelte.js'
 
   let { hostname, onSessionLost, sectionId = 'general' } = $props()
@@ -18,6 +19,7 @@
     ['general', N_('General'), 'server'], ['network', N_('Network'), 'network'], ['services', N_('Services'), 'folder'],
     ['alerts', N_('Alerts'), 'bell'], ['power', N_('Power & UPS'), 'power'], ['hardware', N_('Hardware'), 'drive'],
     ['updates', N_('Software update'), 'refresh'], ['events', N_('Events & logs'), 'file'], ['restart', N_('Restart / shut down'), 'power'],
+    ['about', N_('About'), 'info'],
   ]
   let dialog = $state(null)
 
@@ -119,6 +121,26 @@
   }
   function useProvider(name) {
     if (providers[name]) cfg.smtp = { ...cfg.smtp, ...providers[name] }
+  }
+
+  // Events or logs, emptied after the admin password (checked by the NAS).
+  function askClear(clearEvents, clearLogs) {
+    dialog = {
+      title: clearEvents ? t('Clear all events?') : t('Clear all logs?'),
+      message: clearEvents
+        ? t('The event list is emptied. Alerts already emailed are not affected.')
+        : t('The system logs (nasd, Samba, kernel…) are deleted. They help to understand a problem: clear them only if you no longer need them.'),
+      confirmLabel: clearEvents ? t('Clear events') : t('Clear logs'),
+      askPassword: true,
+      onConfirm: async (password) => {
+        await api.post('/api/events/clear', { events: clearEvents, logs: clearLogs, password })
+        dialog = null
+        // The "cleared" record is written once its alert email went out.
+        events = await api.get('/api/events')
+        setTimeout(async () => (events = await api.get('/api/events').catch(() => events)), 2500)
+        if (clearLogs) loadLogs()
+      },
+    }
   }
 
   async function loadLogs() {
@@ -252,7 +274,14 @@
   {#if tab === 'updates'}<Updates />{/if}
   {#if tab === 'hardware'}<HardwareSettings />{/if}
 
+  {#if tab === 'about'}<About {hostname} />{/if}
+
   {#if tab === 'events'}
+    <div class="add clear-bar">
+      <span class="muted small">{t('Clearing needs the admin password. A single event then records it.')}</span>
+      <span class="spacer"></span>
+      <button class="secondary" onclick={() => askClear(true, false)}>{t('Clear events')}</button>
+    </div>
     <div class="card list">
       {#each events as e, i (i)}
         <div class="row event">
@@ -278,6 +307,7 @@
       </select>
       <label class="check"><input type="checkbox" bind:checked={errorsOnly} onchange={loadLogs} /><span>{t('Warnings and errors only')}</span></label>
       <button class="secondary" onclick={loadLogs}>{t('Refresh')}</button>
+      <button class="secondary" onclick={() => askClear(false, true)}>{t('Clear logs')}</button>
     </div>
     <pre class="logs" bind:this={logEl}>{logLines.join('\n')}</pre>
   {/if}

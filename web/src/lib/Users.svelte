@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import { api, formatBytes } from '../api.js'
+  import UserEdit from './UserEdit.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
   import JobPanel from './JobPanel.svelte'
   import { t, N_ } from '../i18n.svelte.js'
@@ -22,6 +23,8 @@
   let newName = $state('')
   let newPw = $state('')
   let newPw2 = $state('')
+  let newEmail = $state('')
+  let editing = $state(null) // user being edited
   let formError = $state('')
 
   // Password dialog (a NAS user or '__admin__')
@@ -51,10 +54,10 @@
     formError = ''
     if (newPw !== newPw2) return (formError = t('The passwords do not match.'))
     try {
-      await api.post('/api/users', { name: newName, password: newPw })
+      await api.post('/api/users', { name: newName, password: newPw, email: newEmail })
       notice = t('User {name} created. Give them access to shares on the Shares page.', { name: newName })
       adding = false
-      newName = newPw = newPw2 = ''
+      newName = newPw = newPw2 = newEmail = ''
       refresh()
     } catch (e) {
       formError = e.message
@@ -168,6 +171,9 @@
         <input bind:value={newName} autocomplete="off" spellcheck="false" maxlength="32" autofocus />
         <span class="hint">{t('Lowercase letters, digits, - and _. This is what they type when connecting.')}</span>
       </label>
+      <label>{t('Email')} <span class="muted small">({t('optional')})</span>
+        <input type="email" bind:value={newEmail} autocomplete="off" placeholder="alice@example.com" />
+      </label>
       <div class="two-cols">
         <label>{t('Password')} <input type="password" bind:value={newPw} autocomplete="new-password" minlength="8" required /></label>
         <label>{t('Confirm password')} <input type="password" bind:value={newPw2} autocomplete="new-password" required /></label>
@@ -190,7 +196,7 @@
             {#each users as u (u.name)}
               {@const [cls, st] = status(u)}
               <tr>
-                <td><div class="who"><span class="avatar">{u.name.slice(0, 2).toUpperCase()}</span><span>{u.name}</span></div></td>
+                <td><div class="who"><span class="avatar">{u.name.slice(0, 2).toUpperCase()}</span><span>{u.name}{#if u.email}<br /><span class="muted small">{u.email}</span>{/if}</span></div></td>
                 <td class="hide-sm"><div class="badges">{#each u.shares as sh}<span class="badge">{sh}</span>{:else}<span class="muted small">—</span>{/each}</div></td>
                 <td class="quota-cell">
                   {#each usageOf(u.name) as x}
@@ -205,6 +211,7 @@
                 </td>
                 <td><span class="badge {cls}">{t(st)}</span></td>
                 <td class="right row-actions">
+                  <button class="link" onclick={() => (editing = u)}>{t('Edit')}</button>
                   <button class="link" onclick={() => openPassword(u.name)}>{t('Password')}</button>
                   <button class="link" onclick={() => openQuota(u)}>{t('Quota')}</button>
                   <button class="link danger-text" onclick={() => askDelete(u)}>{t('Delete')}</button>
@@ -291,6 +298,11 @@
       </div>
     </form>
   </div>
+{/if}
+
+{#if editing}
+  <UserEdit user={editing} onCancel={() => (editing = null)}
+    onDone={(name) => { notice = t('User {name} saved.', { name }); editing = null; refresh() }} />
 {/if}
 
 {#if dialog}

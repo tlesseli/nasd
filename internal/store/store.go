@@ -25,6 +25,7 @@ type User struct {
 	PasswordHash string `json:"passwordHash"`
 	Admin        bool   `json:"admin"`
 	QuotaMB      int    `json:"quotaMB"` // max space per volume (ext4 with quotas); 0 = unlimited
+	Email        string `json:"email,omitempty"`
 }
 
 // Share is a folder on a volume, exported over SMB.
@@ -49,6 +50,12 @@ type Share struct {
 	// SMBDisabled: not offered over SMB (e.g. an rsync-only backup source).
 	// "Disabled" so that shares saved before this option keep SMB.
 	SMBDisabled bool `json:"smbDisabled"`
+	// Offline: kept (settings and files) but served by nothing (SMB, FTP,
+	// rsync) until switched back online.
+	Offline bool `json:"offline"`
+	// InPublic: shown read-only as a subfolder of the public folder
+	// (\\nas\public\<name>), readable by everyone on the network.
+	InPublic bool `json:"inPublic"`
 	// AllowedHosts restricts SMB and rsync access to these IPs / networks
 	// (empty = the whole LAN).
 	AllowedHosts []string `json:"allowedHosts"`

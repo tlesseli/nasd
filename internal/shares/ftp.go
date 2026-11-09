@@ -90,7 +90,7 @@ func ftpViews(st store.State, root string) (map[string][]ftpMount, []string) {
 			continue
 		}
 		users = append(users, u.Name)
-		for _, sh := range st.Shares {
+		for _, sh := range online(st.Shares) {
 			access := sh.Access[u.Name]
 			if !sh.FTP || access == "" {
 				continue

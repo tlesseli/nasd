@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"readynas/internal/alerts"
@@ -33,6 +34,7 @@ func (s *Server) healthRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/alerts", s.requireLogin(s.saveAlerts))
 	mux.Handle("POST /api/alerts/test", s.requireLogin(s.testAlerts))
 	mux.Handle("GET /api/events", s.requireLogin(s.listEvents))
+	mux.Handle("POST /api/events/clear", s.requireLogin(s.clearEvents))
 	mux.Handle("GET /api/sensors", s.requireLogin(s.sensors))
 	mux.Handle("GET /api/disks/{name}/smart", s.requireLogin(s.smartReport))
 	mux.Handle("GET /api/logs", s.requireLogin(s.logs))
@@ -40,6 +42,50 @@ func (s *Server) healthRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/volumes/{name}/maintenance", s.requireLogin(s.saveMaintenance))
 	mux.Handle("POST /api/volumes/{name}/check", s.requireLogin(s.checkVolume))
 	mux.Handle("POST /api/volumes/{name}/fscheck", s.requireLogin(s.fsCheck))
+}
+
+// clearEvents empties the event list and/or the system logs (admin password
+// required). A single event then records who cleared what, so a wipe never
+// goes unnoticed.
+func (s *Server) clearEvents(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Events   bool   `json:"events"`
+		Logs     bool   `json:"logs"`
+		Password string `json:"password"`
+	}
+	if !readJSON(w, r, &req) || !s.confirmAdmin(w, r, req.Password) {
+		return
+	}
+	if !req.Events && !req.Logs {
+		writeError(w, http.StatusBadRequest, "nothing to clear")
+		return
+	}
+	var what []string
+	if req.Logs {
+		// The journal keeps "active" files: rotate them into archives first,
+		// then drop every archive.
+		if _, err := s.Run(r.Context(), "journalctl", "--rotate"); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if _, err := s.Run(r.Context(), "journalctl", "--vacuum-time=1s"); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		what = append(what, "system logs")
+	}
+	if req.Events {
+		if err := s.Store.Update(func(st *store.State) error { st.Events = nil; return nil }); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		what = append(what, "events")
+	}
+	cleared := strings.Join(what, " and ")
+	if s.Alerts != nil {
+		s.Alerts.Notify("events_cleared", "Cleared: "+cleared, "Cleared from the web interface ("+clientIP(r)+").")
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"cleared": cleared})
 }
 
 func (s *Server) getAlerts(w http.ResponseWriter, r *http.Request) {

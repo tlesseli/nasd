@@ -26,6 +26,8 @@
   let hidden = $state(share?.hidden ?? false)
   let smb = $state(!(share?.smbDisabled ?? false))
   let allowedHosts = $state((share?.allowedHosts ?? []).join(', '))
+  let online = $state(!(share?.offline ?? false))
+  let inPublic = $state(share?.inPublic ?? false)
   let busy = $state(false)
   let error = $state('')
 
@@ -39,7 +41,7 @@
       await onSave({
         name, volume, description, guestRead, recycleBin, hidden: smb && hidden, ftp,
         rsync, rsyncUser: rsync ? rsyncUser : '', rsyncPassword: rsync ? rsyncPassword : '',
-        smbDisabled: !smb, timeMachine: smb && timeMachine,
+        smbDisabled: !smb, timeMachine: smb && timeMachine, offline: !online, inPublic,
         allowedHosts: allowedHosts.split(/[\s,]+/).filter(Boolean),
         access: Object.fromEntries(Object.entries(access).filter(([, a]) => a)),
       })
@@ -104,6 +106,14 @@
       <input bind:value={allowedHosts} placeholder={t('e.g. 192.168.1.20, 192.168.1.0/24')} spellcheck="false" />
       <span class="hint">{t('IP addresses or networks. Empty = any computer on your network. Applies to SMB and rsync.')}</span>
     </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>{t('Availability')}</legend>
+    <label class="check"><input type="checkbox" bind:checked={online} />
+      <span><strong>{t('Online')}</strong> <span class="muted small">· {t('switch off to take the share offline: nobody can open it (SMB, FTP, rsync) until it is back online; settings and files are kept')}</span></span></label>
+    <label class="check"><input type="checkbox" bind:checked={inPublic} />
+      <span><strong>{t('Visible in the public folder')}</strong> <span class="muted small">· {t('shown read-only as a subfolder of \\\\nas\\public: everyone on your network can open and copy its files, without a password')}</span></span></label>
   </fieldset>
 
   <fieldset>

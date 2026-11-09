@@ -120,7 +120,8 @@
     return parts.length ? parts.join(' · ') : t('Nobody has access yet')
   }
   function status(sh) {
-    if (!sh.available) return ['bad', N_('Offline')]
+    if (!sh.available) return ['bad', N_('Volume not mounted')]
+    if (sh.offline) return ['warn', N_('Offline')]
     if (sh.smbDisabled && !sh.ftp && !sh.rsync) return ['neutral', N_('Disabled')]
     return ['good', N_('Online')]
   }
@@ -167,6 +168,7 @@
               <div class="badges">
                 {#if has.smb(sh)}<span class="badge mono" class:off={svcOff('smb')}>SMB</span>{/if}
                 {#if sh.ftp}<span class="badge mono" class:off={svcOff('ftp')}>FTP</span>{/if}
+                {#if sh.inPublic && !sh.offline}<span class="badge mono">{t('Public')}</span>{/if}
                 {#if sh.rsync}<span class="badge mono" class:off={svcOff('rsync')}>rsync{sh.rsync === 'rw' ? ' r/w' : ''}</span>{/if}
                 {#if !has.smb(sh) && !sh.ftp && !sh.rsync}<span class="muted small">{t('no service')}</span>{/if}
               </div>

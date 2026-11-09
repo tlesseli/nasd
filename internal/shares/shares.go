@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"os/user"
@@ -111,6 +112,7 @@ type UserInfo struct {
 	Name    string   `json:"name"`
 	Shares  []string `json:"shares"` // shares this user can access
 	QuotaMB int      `json:"quotaMB"`
+	Email   string   `json:"email"`
 }
 
 func (s *Service) Users() []UserInfo {
@@ -120,7 +122,7 @@ func (s *Service) Users() []UserInfo {
 		if u.Admin {
 			continue
 		}
-		info := UserInfo{Name: u.Name, Shares: []string{}, QuotaMB: u.QuotaMB}
+		info := UserInfo{Name: u.Name, Shares: []string{}, QuotaMB: u.QuotaMB, Email: u.Email}
 		for _, sh := range st.Shares {
 			if sh.Access[u.Name] != "" {
 				info.Shares = append(info.Shares, sh.Name)
@@ -376,6 +378,103 @@ func (s *Service) setPasswords(ctx context.Context, name, password string) error
 	return err
 }
 
+// RenameUser gives a NAS user a new name, keeping everything else: their
+// files (owned by the numeric user ID, which doesn't change), password,
+// quota, share access and home folder.
+//   - Linux: usermod -l renames the account (same ID, same password),
+//   - Samba can't rename: its entry (with the password hash) is exported,
+//     re-imported under the new name, and the old one removed,
+//   - nasd: the state (user, share access) and the home folder follow.
+func (s *Service) RenameUser(ctx context.Context, old, name string) error {
+	if !userRe.MatchString(name) {
+		return errors.New("user name must be 1-32 characters: lowercase letters, digits, - or _")
+	}
+	if slices.Contains(reservedUsers, name) {
+		return fmt.Errorf("%q is reserved", name)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.Store.Read()
+	if !isShareUser(&st, old) {
+		return fmt.Errorf("user %s not found", old)
+	}
+	if st.FindUser(name) != nil {
+		return fmt.Errorf("user %s already exists", name)
+	}
+	if _, err := user.Lookup(name); err == nil {
+		return fmt.Errorf("%q is already used by the system", name)
+	}
+
+	// Samba's entry first (read-only): "old:uid:LM:NT:[flags]:LCT-...:".
+	out, err := s.Run(ctx, "pdbedit", "-L", "-w", "-u", old)
+	if err != nil {
+		return fmt.Errorf("cannot read the SMB account of %s: %w", old, err)
+	}
+	entry := strings.TrimSpace(string(out))
+	if _, rest, ok := strings.Cut(entry, ":"); ok {
+		entry = name + ":" + rest
+	} else {
+		return fmt.Errorf("unexpected SMB account entry for %s", old)
+	}
+
+	if _, err := s.Run(ctx, "usermod", "-l", name, old); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp("", "nasd-smb-*")
+	if err != nil {
+		s.Run(ctx, "usermod", "-l", old, name)
+		return err
+	}
+	defer os.Remove(f.Name())
+	f.WriteString(entry + "\n")
+	f.Close()
+	s.Run(ctx, "pdbedit", "-x", "-u", old)
+	if _, err := s.Run(ctx, "pdbedit", "-i", "smbpasswd:"+f.Name()); err != nil {
+		return fmt.Errorf("renamed, but the SMB password was not carried over (set it again): %w", err)
+	}
+
+	err = s.Store.Update(func(st *store.State) error {
+		st.FindUser(old).Name = name
+		for i := range st.Shares {
+			if a, ok := st.Shares[i].Access[old]; ok {
+				delete(st.Shares[i].Access, old)
+				st.Shares[i].Access[name] = a
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if h := st.Settings.HomeShares; h.Path != "" {
+		if _, err := os.Stat(filepath.Join(h.Path, old)); err == nil {
+			if err := os.Rename(filepath.Join(h.Path, old), filepath.Join(h.Path, name)); err != nil {
+				log.Printf("rename home folder of %s: %v", old, err)
+			}
+		}
+	}
+	return s.apply(ctx)
+}
+
+// SetEmail stores a user's email address ("" removes it).
+func (s *Service) SetEmail(name, email string) error {
+	email = strings.TrimSpace(email)
+	if email != "" && !emailRe.MatchString(email) {
+		return fmt.Errorf("%q is not an email address", email)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Store.Update(func(st *store.State) error {
+		if !isShareUser(st, name) {
+			return fmt.Errorf("user %s not found", name)
+		}
+		st.FindUser(name).Email = email
+		return nil
+	})
+}
+
+var emailRe = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
+
 func (s *Service) DeleteUser(ctx context.Context, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -424,6 +523,19 @@ type ShareRequest struct {
 	AllowedHosts  []string          `json:"allowedHosts"`
 	Hidden        bool              `json:"hidden"`
 	SMBDisabled   bool              `json:"smbDisabled"`
+	Offline       bool              `json:"offline"`
+	InPublic      bool              `json:"inPublic"`
+}
+
+// online: the shares that are served (not marked offline).
+func online(all []store.Share) []store.Share {
+	var out []store.Share
+	for _, sh := range all {
+		if !sh.Offline {
+			out = append(out, sh)
+		}
+	}
+	return out
 }
 
 type ShareInfo struct {
@@ -620,7 +732,7 @@ func (s *Service) CreateShare(ctx context.Context, req ShareRequest) error {
 			Name: req.Name, Volume: req.Volume, Path: path, Description: req.Description,
 			Access: req.Access, GuestRead: req.GuestRead, RecycleBin: req.RecycleBin, TimeMachine: req.TimeMachine,
 			Rsync: req.Rsync, RsyncUser: req.RsyncUser, RsyncPassword: req.RsyncPassword, FTP: req.FTP,
-			AllowedHosts: req.AllowedHosts, Hidden: req.Hidden, SMBDisabled: req.SMBDisabled,
+			AllowedHosts: req.AllowedHosts, Hidden: req.Hidden, SMBDisabled: req.SMBDisabled, Offline: req.Offline, InPublic: req.InPublic,
 		})
 		return nil
 	})
@@ -661,6 +773,7 @@ func (s *Service) UpdateShare(ctx context.Context, name string, req ShareRequest
 		sh.Description, sh.Access, sh.GuestRead = req.Description, req.Access, req.GuestRead
 		sh.RecycleBin, sh.TimeMachine = req.RecycleBin, req.TimeMachine
 		sh.AllowedHosts, sh.Hidden, sh.SMBDisabled, sh.FTP = req.AllowedHosts, req.Hidden, req.SMBDisabled, req.FTP
+		sh.Offline, sh.InPublic = req.Offline, req.InPublic
 		if req.RsyncPassword == "" && req.RsyncUser == sh.RsyncUser {
 			req.RsyncPassword = sh.RsyncPassword // unchanged user, empty field: keep the password
 		}
@@ -739,6 +852,9 @@ func (s *Service) apply(ctx context.Context) error {
 	if err := os.Rename(tmp.Name(), s.SmbConf); err != nil {
 		return err
 	}
+	// Shares shown inside the public folder (before Samba reloads).
+	s.syncPublicMounts(ctx, st)
+
 	// SMB itself, then the two discovery services, each with its own switch.
 	// Discovery announces the NAS; without SMB there is nothing to announce.
 	set := st.Settings

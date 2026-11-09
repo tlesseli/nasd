@@ -105,8 +105,8 @@ type Engine struct {
 	// noticeUntil (a new admin password, "keep holding" while resetting).
 	notice      [2]string
 	noticeUntil time.Time
-	frame     Frame
-	shown     Frame
+	frame       Frame
+	shown       Frame
 }
 
 func New(collect func(context.Context) Snapshot, out Output) *Engine {

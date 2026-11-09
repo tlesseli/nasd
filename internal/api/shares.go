@@ -33,6 +33,7 @@ func (s *Server) shareRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /api/users", s.requireLogin(s.listUsers))
 	mux.Handle("POST /api/users", s.requireLogin(s.createUser))
 	mux.Handle("POST /api/users/{name}/password", s.requireLogin(s.setUserPassword))
+	mux.Handle("POST /api/users/{name}", s.requireLogin(s.updateUser))
 	mux.Handle("POST /api/users/{name}/delete", s.requireLogin(s.deleteUser))
 	mux.Handle("GET /api/shares", s.requireLogin(s.listShares))
 	mux.Handle("POST /api/shares", s.requireLogin(s.createShare))
@@ -62,10 +63,36 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name     string `json:"name"`
 		Password string `json:"password"`
+		Email    string `json:"email"`
 	}
-	if readJSON(w, r, &req) {
-		result(w, s.Shares.CreateUser(r.Context(), req.Name, req.Password))
+	if !readJSON(w, r, &req) {
+		return
 	}
+	if err := s.Shares.CreateUser(r.Context(), req.Name, req.Password); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	result(w, s.Shares.SetEmail(req.Name, req.Email))
+}
+
+// updateUser: new name and/or email (password and quota have their own calls).
+func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name  string `json:"name"`
+		Email string `json:"email"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	name := r.PathValue("name")
+	if req.Name != "" && req.Name != name {
+		if err := s.Shares.RenameUser(r.Context(), name, req.Name); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		name = req.Name
+	}
+	result(w, s.Shares.SetEmail(name, req.Email))
 }
 
 func (s *Server) setUserPassword(w http.ResponseWriter, r *http.Request) {

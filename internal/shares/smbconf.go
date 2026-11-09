@@ -95,7 +95,7 @@ func renderSmbConf(st store.State) string {
 			b.WriteString("   read only = yes\n   write list = @" + Group + "\n")
 		}
 	}
-	for _, sh := range st.Shares {
+	for _, sh := range online(st.Shares) {
 		if sh.SMBDisabled {
 			continue // not offered over SMB at all
 		}
@@ -203,7 +203,7 @@ hosts deny = *
 secrets file = ` + secrets + `
 strict modes = yes
 `)
-	for _, sh := range st.Shares {
+	for _, sh := range online(st.Shares) {
 		if sh.Rsync == "" {
 			continue
 		}
@@ -231,7 +231,7 @@ strict modes = yes
 func renderRsyncSecrets(st store.State) string {
 	seen := map[string]bool{}
 	var b strings.Builder
-	for _, sh := range st.Shares {
+	for _, sh := range online(st.Shares) {
 		if sh.Rsync != "" && sh.RsyncUser != "" && !seen[sh.RsyncUser] {
 			seen[sh.RsyncUser] = true
 			b.WriteString(sh.RsyncUser + ":" + sh.RsyncPassword + "\n")
@@ -260,7 +260,7 @@ func renderAvahi(st store.State) string {
   </service>
 `)
 	var tm []string
-	for _, sh := range st.Shares {
+	for _, sh := range online(st.Shares) {
 		if sh.TimeMachine && !sh.SMBDisabled {
 			tm = append(tm, sh.Name)
 		}

@@ -28,6 +28,13 @@ func (f *fakeSystem) run(ctx context.Context, name string, args ...string) ([]by
 	if strings.HasPrefix(cmd, "systemctl is-active") {
 		return []byte("active\n"), nil
 	}
+	if strings.HasPrefix(cmd, "pdbedit -L -w -u ") { // a Samba account export
+		return []byte(args[len(args)-1] + ":1001:XXXX:0123456789ABCDEF0123456789ABCDEF:[U          ]:LCT-6AF0D6E4:\n"), nil
+	}
+	if strings.HasPrefix(cmd, "pdbedit -i smbpasswd:") { // keep what would be imported
+		data, _ := os.ReadFile(strings.TrimPrefix(args[1], "smbpasswd:"))
+		f.stdins = append(f.stdins, "import:"+string(data))
+	}
 	return nil, nil
 }
 
@@ -520,5 +527,84 @@ func TestFolderToDelete(t *testing.T) {
 		if _, err := s.FolderToDelete(mounts, "media", name); err == nil {
 			t.Errorf("%q must not be deletable", name)
 		}
+	}
+}
+
+// Visible-in-Public shares are bind-mounted read-only inside the public
+// folder; offline shares are served by nothing and leave the public folder.
+func TestPublicMountsAndOffline(t *testing.T) {
+	s, f, vol := newTestService(t)
+	ctx := context.Background()
+	s.ProcMounts = filepath.Join(t.TempDir(), "mounts")
+	os.WriteFile(s.ProcMounts, nil, 0o644)
+	s.CreateUser(ctx, "alice", "secret-password")
+	if err := s.SetPublicShare(ctx, true, "media", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateShare(ctx, ShareRequest{Name: "Photos", Volume: "media", InPublic: true, Access: map[string]string{"alice": "rw"}}); err != nil {
+		t.Fatal(err)
+	}
+	src, mnt := filepath.Join(vol, "Photos"), filepath.Join(vol, "public", "Photos")
+	all := strings.Join(f.cmds, "\n")
+	for _, want := range []string{"mount --bind " + src + " " + mnt, "mount -o remount,bind,ro " + mnt} {
+		if !strings.Contains(all, want) {
+			t.Errorf("missing %q:\n%s", want, all)
+		}
+	}
+	// Now mounted; take the share offline.
+	os.WriteFile(s.ProcMounts, []byte("/dev/md0 "+strings.ReplaceAll(mnt, " ", `\040`)+" ext4 ro 0 0\n"), 0o644)
+	f.cmds = nil
+	st := s.Store.Read()
+	sh := st.FindShare("Photos")
+	req := ShareRequest{Access: sh.Access, InPublic: true, Offline: true}
+	if err := s.UpdateShare(ctx, "Photos", req); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(f.cmds, "\n"), "umount "+mnt) {
+		t.Errorf("an offline share must leave the public folder:\n%s", strings.Join(f.cmds, "\n"))
+	}
+	conf, _ := os.ReadFile(s.SmbConf)
+	if strings.Contains(string(conf), "[Photos]") {
+		t.Errorf("an offline share must not be in smb.conf:\n%s", conf)
+	}
+}
+
+// Renaming a user carries the password hash, share access and home folder.
+func TestRenameUser(t *testing.T) {
+	s, f, vol := newTestService(t)
+	ctx := context.Background()
+	s.CreateUser(ctx, "alice", "secret-password")
+	s.SetHomeShares(ctx, true, "media")
+	if err := s.CreateShare(ctx, ShareRequest{Name: "Photos", Volume: "media", Access: map[string]string{"alice": "rw"}}); err != nil {
+		t.Fatal(err)
+	}
+	s.SetEmail("alice", "alice@example.com")
+	if err := s.RenameUser(ctx, "alice", "alicia"); err != nil {
+		t.Fatal(err)
+	}
+	all := strings.Join(f.cmds, "\n")
+	for _, want := range []string{"usermod -l alicia alice", "pdbedit -x -u alice"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("missing %q:\n%s", want, all)
+		}
+	}
+	if imp := strings.Join(f.stdins, "\n"); !strings.Contains(imp, "import:alicia:1001:XXXX:0123456789ABCDEF0123456789ABCDEF:") {
+		t.Errorf("the SMB password hash must follow the new name:\n%s", imp)
+	}
+	st := s.Store.Read()
+	if st.FindUser("alice") != nil || st.FindUser("alicia") == nil || st.FindUser("alicia").Email != "alice@example.com" {
+		t.Error("state not renamed")
+	}
+	if st.FindShare("Photos").Access["alicia"] != "rw" || st.FindShare("Photos").Access["alice"] != "" {
+		t.Errorf("share access not renamed: %v", st.FindShare("Photos").Access)
+	}
+	if _, err := os.Stat(filepath.Join(vol, "homes", "alicia")); err != nil {
+		t.Error("home folder not renamed")
+	}
+	if err := s.RenameUser(ctx, "alicia", "root"); err == nil {
+		t.Error("reserved names must be refused")
+	}
+	if err := s.SetEmail("alicia", "not an email"); err == nil {
+		t.Error("invalid email must be refused")
 	}
 }
