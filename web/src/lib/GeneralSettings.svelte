@@ -1,7 +1,8 @@
 <script>
   import { onMount } from 'svelte'
   import { api } from '../api.js'
-  import { t, N_ } from '../i18n.svelte.js'
+  import { t, N_, i18n, LANGS, setLang } from '../i18n.svelte.js'
+  import { look, THEMES, MODES, setTheme, setMode } from '../theme.svelte.js'
 
   // How the NAS identifies itself, and its clock. Changes are collected and
   // saved together (the bar at the bottom), like in the mockup.
@@ -16,13 +17,13 @@
   let msg = $state(null)
 
   async function load() {
-    const [t, st] = await Promise.all([api.get('/api/time'), api.get('/api/settings')])
-    zones = t.timezones
-    timeInfo = t.info
+    const [tm, st] = await Promise.all([api.get('/api/time'), api.get('/api/settings')])
+    zones = tm.timezones
+    timeInfo = tm.info
     settings = st
     initial = {
-      name: hostname, workgroup: st.workgroup || 'WORKGROUP', timezone: t.info.timezone,
-      ntp: t.info.ntp, servers: t.info.ntpServers.join(', '), manual: '',
+      name: hostname, workgroup: st.workgroup || 'WORKGROUP', timezone: tm.info.timezone,
+      ntp: tm.info.ntp, servers: tm.info.ntpServers.join(', '), manual: '',
     }
     form = { ...initial }
   }
@@ -65,6 +66,33 @@
     }
   }
 </script>
+
+<!-- Look and language: kept in this browser, applied at once (no Save). -->
+<section class="card appearance">
+  <div class="card-head"><div><h2>{t('Appearance')}</h2><div class="muted small">{t('For this browser. Applied immediately.')}</div></div></div>
+  <div class="themes" role="radiogroup" aria-label={t('Theme')}>
+    {#each THEMES as [id, label]}
+      <button type="button" class="theme-choice {id}" class:on={look.theme === id} role="radio" aria-checked={look.theme === id} onclick={() => setTheme(id)}>
+        <span class="swatch" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>{t(label)}</span>
+      </button>
+    {/each}
+  </div>
+  <div class="two-cols">
+    {#if look.theme === 'classic'}
+      <label>{t('Color mode')}
+        <select value={look.mode} onchange={(e) => setMode(e.currentTarget.value)}>
+          {#each MODES as [id, label]}<option value={id}>{t(label)}</option>{/each}
+        </select>
+      </label>
+    {/if}
+    <label>{t('Language')}
+      <select value={i18n.lang} onchange={(e) => setLang(e.currentTarget.value)}>
+        {#each LANGS as [id, name]}<option value={id}>{name}</option>{/each}
+      </select>
+    </label>
+  </div>
+</section>
 
 {#if form}
   <section class="card">
@@ -110,5 +138,16 @@
 {/if}
 
 <style>
+  .appearance { margin-bottom: 14px; }
+  .themes { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 1rem; }
+  .theme-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; background: var(--surface-2); color: var(--text);
+    border: 2px solid var(--border); text-transform: none; letter-spacing: 0; font-weight: 600; box-shadow: none; padding: 0.7rem; }
+  .theme-choice.on { border-color: var(--accent); }
+  .swatch { display: flex; width: 100%; height: 34px; border-radius: 4px; overflow: hidden; }
+  .swatch i { flex: 1; }
+  .classic .swatch i:nth-child(1) { background: #0b0c0f; } .classic .swatch i:nth-child(2) { background: #f5f6f8; } .classic .swatch i:nth-child(3) { background: #8b8ff8; }
+  .panel .swatch i:nth-child(1) { background: #ddd8c4; } .panel .swatch i:nth-child(2) { background: #23262b; } .panel .swatch i:nth-child(3) { background: #f6b52e; }
+  .neon .swatch i:nth-child(1) { background: #060a18; } .neon .swatch i:nth-child(2) { background: #36d1ff; } .neon .swatch i:nth-child(3) { background: #b56cff; }
+
   .save { background: var(--accent); color: #fff; }
 </style>

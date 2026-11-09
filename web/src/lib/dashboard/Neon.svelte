@@ -46,18 +46,18 @@
 
 <div class="neon">
   <header class="top">
-    <div class="brand">
+    <div class="nbrand">
       <svg viewBox="0 0 40 40" class="logo" aria-hidden="true"><path d="M20 2 36 11v18L20 38 4 29V11z" /><path d="M12 15v10l8 5 8-5V15l-8-5z" /></svg>
       <div><div class="name">{(d.sys?.hostname ?? 'nas').toUpperCase()}</div><div class="tagline">{t('Network · Storage')} · {d.sys?.version ? 'nasd ' + d.sys.version.split('+')[0] : ''}</div></div>
     </div>
-    <div class="glass status"><span class="dot" class:bad={!healthy}></span><div><div class="cap">{t('System status')}</div><div class="big">{d.error ? t('OFFLINE') : healthy ? t('ONLINE') : t('ATTENTION')}</div></div></div>
+    <div class="glass status"><span class="ndot" class:bad={!healthy}></span><div><div class="cap">{t('System status')}</div><div class="big">{d.error ? t('OFFLINE') : healthy ? t('ONLINE') : t('ATTENTION')}</div></div></div>
     <div class="glass meta">
       <div><div class="cap">{t('Uptime')}</div><div class="val">{up.d}d {String(up.h).padStart(2, '0')}h {String(up.m).padStart(2, '0')}m</div></div>
       <div><div class="cap">{t('Signed in')}</div><div class="val">{user ?? 'admin'}@{d.sys?.hostname ?? 'nas'}.local</div></div>
     </div>
   </header>
 
-  <div class="grid">
+  <div class="ngrid">
     <section class="glass cpu">
       <h3>{t('CPU usage')}</h3>
       <svg viewBox="0 0 140 140" class="ring" role="img" aria-label="CPU {cpu}%">
@@ -69,7 +69,7 @@
 
     <section class="glass array">
       <h3>{t('RAID array overview')}</h3>
-      <svg viewBox="0 0 300 230" class="stack" aria-hidden="true">
+      <svg viewBox="0 0 300 230" class="nstack" aria-hidden="true">
         <defs><linearGradient id="nlayer" x1="0" x2="1"><stop offset="0" stop-color="#36d1ff" stop-opacity=".35" /><stop offset="1" stop-color="#b56cff" stop-opacity=".35" /></linearGradient></defs>
         <ellipse cx="150" cy="200" rx="120" ry="22" class="halo" /><ellipse cx="150" cy="200" rx="85" ry="15" class="halo" />
         {#each Array(layers) as _, i}
@@ -82,7 +82,7 @@
         {/each}
       </svg>
       {#if vol}
-        <div class="level">{vol.level.replace('raid', 'RAID ')} <span>|</span> {levelText[vol.level] ? t(levelText[vol.level]) : ''}</div>
+        <div class="nlevel">{vol.level.replace('raid', 'RAID ')} <span>|</span> {levelText[vol.level] ? t(levelText[vol.level]) : ''}</div>
         <div class="trio">
           {#each [[N_('Used'), vUsed, vTotal ? (100 * vUsed) / vTotal : 0], [N_('Total'), vTotal, 100], [N_('Free'), vTotal - vUsed, vTotal ? (100 * (vTotal - vUsed)) / vTotal : 0]] as [label, bytes, pct]}
             <figure>
@@ -121,7 +121,7 @@
       <div class="hexes">
         {#each bayList as b (b.n)}
           {@const st = diskState(b.disk)}
-          <a class="hex" class:bad={st === 'fault'} class:warn={st === 'warn'} class:empty={st === 'empty'} href="#/volumes">
+          <a class="hex" class:bad={st === 'fault'} class:warn={st === 'warn'} class:vacant={st === 'empty'} href="#/volumes">
             <span class="hn">{t('Disk {n}', { n: String(b.n).padStart(2, '0') })}</span>
             <span class="ht">{b.disk?.health?.temperatureC ? `${b.disk.health.temperatureC}°C` : st === 'empty' ? t('empty') : '—'}
               {#if st === 'ok'}<b class="ok">✓</b>{:else if st === 'fault' || st === 'warn'}<b class="ko">!</b>{/if}</span>
@@ -151,20 +151,20 @@
   h3 small { color: #7f93bf; font-size: 0.7rem; margin-left: 0.4rem; }
   .muted { color: #7f93bf; }
   .top { display: flex; gap: 14px; align-items: stretch; flex-wrap: wrap; margin-bottom: 14px; }
-  .brand { display: flex; align-items: center; gap: 0.8rem; margin-right: auto; }
+  .nbrand { display: flex; align-items: center; gap: 0.8rem; margin-right: auto; }
   .logo { width: 44px; height: 44px; fill: none; stroke: var(--cyan); stroke-width: 2.4; filter: drop-shadow(0 0 6px var(--cyan)); }
   .name { font-size: 1.7rem; font-weight: 800; letter-spacing: 0.08em; background: linear-gradient(90deg, #e8f6ff, var(--cyan)); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .tagline { font-size: 0.7rem; letter-spacing: 0.3em; color: #8fb7e8; text-transform: uppercase; }
   .status { display: flex; align-items: center; gap: 0.8rem; padding: 10px 22px; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: #3ee08f; box-shadow: 0 0 10px #3ee08f; }
-  .dot.bad { background: #ffb23e; box-shadow: 0 0 10px #ffb23e; }
+  .ndot { width: 10px; height: 10px; border-radius: 50%; background: #3ee08f; box-shadow: 0 0 10px #3ee08f; }
+  .ndot.bad { background: #ffb23e; box-shadow: 0 0 10px #ffb23e; }
   .cap { font-size: 0.66rem; letter-spacing: 0.16em; text-transform: uppercase; color: #8fb7e8; }
   .big { font-size: 1.25rem; font-weight: 700; letter-spacing: 0.12em; color: var(--cyan); }
   .meta { display: flex; gap: 1.6rem; padding: 10px 18px; }
   .val { font-size: 0.95rem; }
-  .grid { display: grid; grid-template-columns: 1fr 1.5fr 1.2fr; grid-template-areas: "cpu array net" "mem array disks"; gap: 14px; }
+  .ngrid { display: grid; grid-template-columns: 1fr 1.5fr 1.2fr; grid-template-areas: "cpu array net" "mem array disks"; gap: 14px; }
   .cpu { grid-area: cpu; } .mem { grid-area: mem; } .array { grid-area: array; } .net { grid-area: net; } .disks { grid-area: disks; }
-  @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; grid-template-areas: "cpu" "mem" "array" "net" "disks"; } }
+  @media (max-width: 1100px) { .ngrid { grid-template-columns: 1fr; grid-template-areas: "cpu" "mem" "array" "net" "disks"; } }
   .ring { width: 100%; max-width: 180px; display: block; margin: 0 auto; }
   .track { fill: none; stroke: #1a2a52; stroke-width: 9; }
   .arc { fill: none; stroke-width: 9; stroke-linecap: round; transform: rotate(-90deg); transform-origin: center; transform-box: fill-box; stroke: var(--cyan);
@@ -172,17 +172,17 @@
   .arc.violet { stroke: var(--violet); filter: drop-shadow(0 0 5px var(--violet)); }
   .pct { font-size: 26px; font-weight: 700; fill: #f2f8ff; text-anchor: middle; dominant-baseline: middle; }
   .sub { font-size: 9px; fill: #8fb7e8; text-anchor: middle; letter-spacing: 0.15em; text-transform: uppercase; }
-  .stats { display: flex; justify-content: space-between; gap: 0.5rem; margin-top: 0.6rem; font-size: 0.9rem; }
+  .stats { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 0.5rem 1rem; margin-top: 0.6rem; font-size: 0.9rem; }
   .stats div { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; overflow-wrap: anywhere; }
-  .stats span { font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: #8fb7e8; }
-  .stack { width: 100%; max-height: 250px; display: block; }
+  .stats span { white-space: nowrap; font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: #8fb7e8; }
+  .nstack { width: 100%; max-height: 250px; display: block; }
   .halo { fill: none; stroke: var(--cyan); stroke-width: 1.5; opacity: 0.6; filter: drop-shadow(0 0 6px var(--cyan)); }
   .layer .topf { fill: url(#nlayer); stroke: var(--cyan); stroke-width: 1.2; filter: drop-shadow(0 0 4px #36d1ff88); }
   .layer .side { fill: #36d1ff22; stroke: var(--cyan); stroke-width: 1; }
   .layer .side.r { fill: #b56cff22; stroke: var(--violet); }
   .layer.warn .topf, .layer.warn .side { stroke: #ffb23e; }
-  .level { text-align: center; letter-spacing: 0.14em; text-transform: uppercase; color: #bfe9ff; font-size: 0.85rem; margin-top: 0.3rem; }
-  .level span { color: #4a6aa8; margin: 0 0.4rem; }
+  .nlevel { text-align: center; letter-spacing: 0.14em; text-transform: uppercase; color: #bfe9ff; font-size: 0.85rem; margin-top: 0.3rem; }
+  .nlevel span { color: #4a6aa8; margin: 0 0.4rem; }
   .trio { display: flex; justify-content: space-around; margin-top: 0.6rem; }
   .trio figure { margin: 0; text-align: center; font-size: 0.66rem; letter-spacing: 0.12em; text-transform: uppercase; color: #8fb7e8; }
   .trio figcaption span { color: #dce8ff; }
@@ -207,7 +207,7 @@
   .hex { aspect-ratio: 1.1; clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0 50%); background: linear-gradient(160deg, #36d1ff33, #b56cff22);
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.2rem; text-decoration: none; color: #dce8ff;
     box-shadow: inset 0 0 0 2px var(--cyan); }
-  .hex.warn { background: linear-gradient(160deg, #ffb23e44, #b56cff22); } .hex.bad { background: #ff4d4d55; } .hex.empty { opacity: 0.35; }
+  .hex.warn { background: linear-gradient(160deg, #ffb23e44, #b56cff22); } .hex.bad { background: #ff4d4d55; } .hex.vacant { opacity: 0.35; }
   .hn { font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; }
   .ht { font-size: 0.8rem; color: #8fb7e8; }
   .ok { color: #3ee08f; margin-left: 0.2rem; } .ko { color: #ffb23e; margin-left: 0.2rem; }

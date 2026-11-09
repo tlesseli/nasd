@@ -1,5 +1,6 @@
 /* ------------------------------------------------------------------ tokens
-   Dark by default (as in the mockup), light when the system asks for it.
+   Dark by default (as in the mockup), light when the system asks for it
+   or when chosen (System Settings → General). Other themes: themes.css.
    Chart colors are validated (dataviz validator): read/write pass the
    lightness band, CVD separation and contrast checks in both modes. */
 :root {
@@ -38,8 +39,9 @@
   color: var(--text);
   background: var(--bg);
 }
+/* Classic light: when the system asks for it (mode "auto"), or chosen. */
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme="panel"]):not([data-theme="neon"]):not([data-mode="dark"]) {
     color-scheme: light;
     --bg: #f5f6f8;
     --surface: #ffffff;
@@ -67,6 +69,34 @@
     --series-write: #16875f;
     --grid: #eceef1;
   }
+}
+:root:not([data-theme="panel"]):not([data-theme="neon"])[data-mode="light"] {
+    color-scheme: light;
+    --bg: #f5f6f8;
+    --surface: #ffffff;
+    --surface-2: #f7f8fa;
+    --surface-3: #eef0f3;
+    --border: #e4e6ea;
+    --border-strong: #d4d7dd;
+    --text: #15171c;
+    --text-2: #3c4049;
+    --muted: #6b707a;
+    --accent: #5b5fd6;
+    --accent-strong: #4a4ec4;
+    --on-primary: #ffffff;
+    --primary-bg: #15171c;
+    --good: #15803d;
+    --good-bg: rgb(21 128 61 / 0.1);
+    --warn: #b45309;
+    --warn-bg: rgb(180 83 9 / 0.1);
+    --bad: #c62828;
+    --bad-bg: rgb(198 40 40 / 0.08);
+    --info: #5b5fd6;
+    --info-bg: rgb(91 95 214 / 0.1);
+    --danger: #c62828;
+    --series-read: #5b5fd6;
+    --series-write: #16875f;
+    --grid: #eceef1;
 }
 
 * { box-sizing: border-box; }
@@ -106,7 +136,7 @@ p { margin: 0.4rem 0; }
   border: 1px solid var(--border); background: var(--surface); color: var(--muted); font: inherit; cursor: pointer; text-align: left;
 }
 .search-btn:hover { border-color: var(--border-strong); }
-.kbd { margin-left: auto; font-size: 0.7rem; padding: 0.05rem 0.35rem; border: 1px solid var(--border-strong); border-radius: 4px; color: var(--muted); }
+.kbd { white-space: nowrap; margin-left: auto; font-size: 0.7rem; padding: 0.05rem 0.35rem; border: 1px solid var(--border-strong); border-radius: 4px; color: var(--muted); }
 .nav-label { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em; color: var(--muted); padding: 0.6rem 8px 0.2rem; }
 .nav { display: flex; flex-direction: column; gap: 2px; }
 .nav a {
@@ -320,5 +350,14 @@ table.members, table.data { width: 100%; border-collapse: collapse; font-size: 0
   .subnav { position: static; flex-direction: row; flex-wrap: wrap; }
   .form-row { grid-template-columns: 1fr; gap: 0.4rem; }
   .hide-sm { display: none; }
+  /* Wide tables scroll sideways inside their card instead of the page. */
+  table.members, table.data { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  h1 { font-size: 1.45rem; }
+  .page-head { align-items: flex-start; }
+  .page-head .actions { margin-left: 0; width: 100%; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .card { padding: 0.95rem 1rem; }
+  .card-head { flex-wrap: wrap; }
+  .dialog { max-width: calc(100vw - 32px); }
+  .two-cols { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { .sidebar { transition: none; } }

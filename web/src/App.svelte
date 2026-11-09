@@ -5,7 +5,7 @@
   import Search from './ui/Search.svelte'
   import Login from './lib/Login.svelte'
   import Dashboard from './lib/dashboard/Dashboard.svelte'
-  import LangPicker from './lib/LangPicker.svelte'
+  import Copyright from './lib/Copyright.svelte'
   import Volumes from './lib/Volumes.svelte'
   import Shares from './lib/Shares.svelte'
   import Users from './lib/Users.svelte'
@@ -140,13 +140,13 @@
           <span class="muted">{t('No volume yet')} · nasd {sys?.version ?? ''}</span>
         {/if}
       </div>
-      <LangPicker />
       <div class="account">
         <span class="avatar">{(user ?? 'ad').slice(0, 2).toUpperCase()}</span>
         <div><div>{user}</div><div class="muted small">{t('Administrator')}</div></div>
         <span class="spacer"></span>
         <button class="icon-btn" onclick={logout} title={t('Sign out')} aria-label={t('Sign out')}><Icon name="logout" size={16} /></button>
       </div>
+      <Copyright />
     </aside>
 
     <div class="main">

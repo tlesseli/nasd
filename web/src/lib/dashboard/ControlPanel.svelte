@@ -114,8 +114,8 @@
     </nav>
   </header>
 
-  <div class="grid">
-    <section class="panel instruments">
+  <div class="cpgrid">
+    <section class="cpanel instruments">
       <h3 class="tag">{t('Primary instruments')}</h3>
       <div class="dials">
         {#each instruments as g (g.label)}
@@ -143,7 +143,7 @@
       </div>
     </section>
 
-    <section class="panel annunciator">
+    <section class="cpanel annunciator">
       <h3 class="tag">{t('Alarm annunciator')}</h3>
       <div class="lamps">
         {#each lamps as l (l.label)}
@@ -162,12 +162,12 @@
       </div>
     </section>
 
-    <section class="panel levels">
+    <section class="cpanel cplevels">
       <h3 class="tag">{t('Volume levels')}</h3>
       <div class="meters">
         {#each ps as v (v.name)}
           {@const pct = v.totalBytes ? (100 * v.usedBytes) / v.totalBytes : 0}
-          <div class="meter">
+          <div class="cpmeter">
             <div class="scale"><span>100</span><span>75</span><span>50</span><span>25</span><span>0</span></div>
             <div class="bar" role="img" aria-label={t('{name}: {percent}% used', { name: v.name, percent: Math.round(pct) })}>
               {#each Array(SEGS) as _, i}{@const lvl = (SEGS - i) * (100 / SEGS)}<span class:on={pct >= lvl - 100 / SEGS / 2} class:amber={lvl > 75} class:red={lvl > 90}></span>{/each}
@@ -180,13 +180,13 @@
       </div>
     </section>
 
-    <section class="panel bays">
+    <section class="cpanel bays">
       <h3 class="tag">{t('Drive bays')}</h3>
       <div class="legend"><span><i class="led green"></i>{t('Health OK')}</span><span><i class="led amber"></i>{t('Fault')}</span><span><i class="led blue"></i>{t('Spinning')}</span></div>
       <div class="rack">
         {#each bayList as b (b.n)}
           {@const st = diskState(b.disk)}
-          <a class="sled" class:empty={!b.disk} class:fault={st === 'fault' || st === 'warn'} href="#/volumes">
+          <a class="sled" class:vacant={!b.disk} class:fault={st === 'fault' || st === 'warn'} href="#/volumes">
             <div class="num">{b.n}</div>
             <div class="grille">{#each Array(7) as _}<span></span>{/each}</div>
             <div class="leds">
@@ -204,7 +204,7 @@
       </div>
     </section>
 
-    <section class="panel switches">
+    <section class="cpanel switches">
       <h3 class="tag">{t('Service switches')}</h3>
       <div class="sw-row">
         {#each switches as s (s.label)}
@@ -219,7 +219,7 @@
       </div>
     </section>
 
-    <section class="panel counters">
+    <section class="cpanel counters">
       <h3 class="tag">{t('Counters')}</h3>
       <div class="ctr-label">{t('Uptime D : H : M')}</div>
       <div class="digits">
@@ -231,7 +231,7 @@
       <div class="digits">{#each digits(backupsOK, 3) as c}<span>{c}</span>{/each}</div>
     </section>
 
-    <section class="panel power">
+    <section class="cpanel power">
       <h3 class="tag">{t('Power')}</h3>
       <div class="pw">
         <div class="stop-wrap">
@@ -247,7 +247,7 @@
           <span class="tag">{t('Restart')}</span>
         </div>
       </div>
-      <p class="note center">{powerMsg || t('Hold 3 s to confirm · connected computers lose their shares')}</p>
+      <p class="note cpcenter">{powerMsg || t('Hold 3 s to confirm · connected computers lose their shares')}</p>
     </section>
   </div>
 </div>
@@ -267,17 +267,17 @@
   .key { background: #2a2d32; color: #e8ebef; text-decoration: none; padding: 0.7rem 1.1rem; border-radius: 4px; font-weight: 800;
     font-size: 0.72rem; letter-spacing: 0.18em; text-transform: uppercase; box-shadow: inset 0 -3px 0 #0006; }
   .key.on { background: var(--amber); color: #2a1d00; }
-  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; margin-top: 14px; }
-  .panel { background: var(--metal); border-radius: 6px; padding: 14px; box-shadow: inset 0 0 0 1px #ffffff0d, 0 1px 0 #0008; min-width: 0; }
+  .cpgrid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; margin-top: 14px; }
+  .cpanel { background: var(--metal); border-radius: 6px; padding: 14px; box-shadow: inset 0 0 0 1px #ffffff0d, 0 1px 0 #0008; min-width: 0; }
   .instruments { grid-column: span 8; } .annunciator { grid-column: span 4; }
-  .levels { grid-column: span 4; } .bays { grid-column: span 8; }
+  .cplevels { grid-column: span 4; } .bays { grid-column: span 8; }
   .switches { grid-column: span 5; } .counters { grid-column: span 4; } .power { grid-column: span 3; }
-  @media (max-width: 1100px) { .panel { grid-column: span 12 !important; } }
+  @media (max-width: 1100px) { .cpanel { grid-column: span 12 !important; } }
   .tag { display: inline-block; background: var(--label); color: var(--ink); font-size: 0.68rem; font-weight: 800; letter-spacing: 0.22em;
     text-transform: uppercase; padding: 0.22rem 0.55rem; border-radius: 2px; margin: 0; }
   .tag.small { font-size: 0.6rem; letter-spacing: 0.16em; }
   .note { font-size: 0.72rem; color: #9aa1aa; margin-top: 0.3rem; }
-  .center { text-align: center; }
+  .cpcenter { text-align: center; }
   /* dials */
   .dials { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-top: 1rem; }
   .dial { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
@@ -311,8 +311,8 @@
   .mush.blue { background: radial-gradient(circle at 40% 35%, #8cc0ff, #2b6fd6); display: block; }
   /* levels */
   .meters { display: flex; gap: 2rem; justify-content: center; flex-wrap: wrap; margin-top: 1rem; }
-  .meter { display: grid; grid-template-columns: auto auto; gap: 0.4rem 0.5rem; justify-items: center; }
-  .meter .readout, .meter .tag, .meter .note { grid-column: 1 / -1; }
+  .cpmeter { display: grid; grid-template-columns: auto auto; gap: 0.4rem 0.5rem; justify-items: center; }
+  .cpmeter .readout, .cpmeter .tag, .cpmeter .note { grid-column: 1 / -1; }
   .scale { display: flex; flex-direction: column; justify-content: space-between; font-size: 0.6rem; color: #9aa1aa; height: 230px; }
   .bar { display: flex; flex-direction: column; gap: 2px; background: #0d0f11; padding: 5px; border: 2px solid #3a3e44; border-radius: 3px; width: 56px; }
   .bar span { height: 9px; background: #1e2a21; border-radius: 1px; }
@@ -326,11 +326,11 @@
   .sled { display: flex; flex-direction: column; align-items: center; gap: 0.7rem; padding: 0.9rem 0.4rem; background: #3a3e44; border-radius: 3px;
     text-decoration: none; color: inherit; border: 2px solid transparent; }
   .sled.fault { border-color: var(--amber); background: #3d3424; }
-  .sled.empty { background: #15171a; color: #6b7079; }
+  .sled.vacant { background: #15171a; color: #6b7079; }
   .num { font-size: 1.1rem; }
   .grille { display: flex; flex-direction: column; gap: 3px; width: 60%; }
   .grille span { height: 3px; background: #101215; border-radius: 1px; }
-  .sled.empty .grille { visibility: hidden; }
+  .sled.vacant .grille { visibility: hidden; }
   .leds { display: flex; gap: 0.5rem; }
   .led { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #2a2d32; box-shadow: inset 0 0 0 1px #0006; }
   .led.green { background: var(--green); box-shadow: 0 0 6px var(--green); }

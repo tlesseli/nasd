@@ -1,0 +1,160 @@
+/* ------------------------------------------------------------------ themes
+   The whole admin interface in the style of the chosen dashboard
+   (System Settings → General): data-theme on <html>, see theme.svelte.js.
+   Classic is app.css itself. Both themes here are dark.
+   Chart colors validated with the dataviz validator against each surface:
+   panel #c2851a/#4f8de0 (all checks pass), neon #1593c4/#9b59e8 (CVD 7.9:
+   legal with the legend every chart has). */
+
+/* ============================================================ Control panel */
+:root[data-theme='panel'] {
+  color-scheme: dark;
+  --bg: #17191c;
+  --surface: #23262b;
+  --surface-2: #2b2f35;
+  --surface-3: #343840;
+  --border: #393d43;
+  --border-strong: #4a4f57;
+  --text: #dfe3e8;
+  --text-2: #c3c8cf;
+  --muted: #9aa1aa;
+  --accent: #f6b52e;
+  --accent-strong: #ffc94d;
+  --on-primary: #2a1d00;
+  --primary-bg: #f6b52e;
+  --good: #3fd16a;
+  --good-bg: rgb(63 209 106 / 0.14);
+  --warn: #f6b52e;
+  --warn-bg: rgb(246 181 46 / 0.14);
+  --bad: #ef5a50;
+  --bad-bg: rgb(239 90 80 / 0.16);
+  --info: #6aa2ec;
+  --info-bg: rgb(79 141 224 / 0.16);
+  --danger: #e5483f;
+  --series-read: #c2851a;
+  --series-write: #4f8de0;
+  --grid: #2e3238;
+  --radius: 6px;
+  --radius-sm: 3px;
+  --plate: #ddd8c4;
+  --plate-ink: #1d1f22;
+  --lcd: #47e07a;
+}
+[data-theme='panel'] body { background: #17191c; }
+[data-theme='panel'] h1 { text-transform: uppercase; letter-spacing: 0.14em; font-weight: 800; font-size: 1.6rem; }
+[data-theme='panel'] .eyebrow { text-transform: uppercase; letter-spacing: 0.18em; font-size: 0.68rem; }
+/* Section titles: the beige label plates of the machine panel. */
+[data-theme='panel'] .card-head h2,
+[data-theme='panel'] .card > h2,
+[data-theme='panel'] .panel-head h2,
+[data-theme='panel'] .page > h2 {
+  display: inline-block; background: var(--plate); color: var(--plate-ink); font-size: 0.7rem; font-weight: 800;
+  letter-spacing: 0.22em; text-transform: uppercase; padding: 0.28rem 0.6rem; border-radius: 2px;
+}
+[data-theme='panel'] .card h3 { text-transform: uppercase; letter-spacing: 0.14em; font-size: 0.74rem; color: var(--text-2); }
+/* Metal panels with a screw head in each corner. */
+[data-theme='panel'] .card {
+  border-color: #111316;
+  box-shadow: inset 0 0 0 1px #ffffff0d, 0 1px 0 #0009;
+  background-image:
+    radial-gradient(circle at 9px 9px, #5b6169 2px, transparent 2.6px),
+    radial-gradient(circle at calc(100% - 9px) 9px, #5b6169 2px, transparent 2.6px),
+    radial-gradient(circle at 9px calc(100% - 9px), #5b6169 2px, transparent 2.6px),
+    radial-gradient(circle at calc(100% - 9px) calc(100% - 9px), #5b6169 2px, transparent 2.6px);
+}
+[data-theme='panel'] .tile { background: #1d2024; border-color: #111316; }
+[data-theme='panel'] .tile .label, [data-theme='panel'] .kpi .label { text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.66rem; }
+/* Values read like the panel's LCD readouts. */
+[data-theme='panel'] .kpi .value {
+  display: inline-block; font-family: ui-monospace, 'DejaVu Sans Mono', monospace; color: var(--lcd); background: #07130b;
+  border: 1px solid #1f3a27; padding: 0.1rem 0.6rem; border-radius: 3px; text-shadow: 0 0 6px #47e07a66; letter-spacing: 0.04em;
+}
+[data-theme='panel'] .kpi.warn .value { color: var(--warn); text-shadow: 0 0 6px #f6b52e66; }
+/* Push buttons. */
+/* :where() keeps this at the weight of a plain `button` rule: buttons that
+   have their own class (search, settings menu, icons) keep their look. */
+:where([data-theme='panel']) button:where(:not(.card)) { text-transform: uppercase; letter-spacing: 0.12em; font-weight: 800; font-size: 0.74rem; box-shadow: inset 0 -3px 0 #0006; }
+[data-theme='panel'] button.secondary { background: #2e3237; border-color: #4a4f57; }
+[data-theme='panel'] button.link, [data-theme='panel'] .icon-btn, [data-theme='panel'] .segmented-btns button {
+  text-transform: none; letter-spacing: 0; font-weight: 500; font-size: inherit; box-shadow: none;
+}
+[data-theme='panel'] .segmented-btns button.on { background: var(--primary-bg); color: var(--on-primary); }
+[data-theme='panel'] .badge { text-transform: uppercase; letter-spacing: 0.1em; font-weight: 800; border-radius: 2px; font-size: 0.66rem; }
+[data-theme='panel'] input, [data-theme='panel'] select, [data-theme='panel'] textarea { background: #0f1113; border-color: #4a4f57; box-shadow: inset 0 2px 4px #0008; }
+[data-theme='panel'] .members th, [data-theme='panel'] .data th { text-transform: uppercase; letter-spacing: 0.14em; font-size: 0.66rem; }
+/* Sidebar: the control column, its name on a plate, keys for pages. */
+[data-theme='panel'] .sidebar { background: #1f2226; border-right: 3px solid #111316; }
+[data-theme='panel'] .brand { background: var(--plate); color: var(--plate-ink); border-radius: 4px; padding: 10px; box-shadow: inset 0 0 0 2px #c9c3ac; }
+[data-theme='panel'] .brand-host { color: #555a52; }
+[data-theme='panel'] .brand-logo { background: #1b1d20; color: var(--accent); border-radius: 3px; }
+[data-theme='panel'] .nav-label { text-transform: uppercase; letter-spacing: 0.2em; }
+[data-theme='panel'] .nav a { text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.74rem; font-weight: 700; border-radius: 3px; }
+[data-theme='panel'] .nav a.active { background: var(--accent); color: #2a1d00; box-shadow: inset 0 -3px 0 #0005; }
+[data-theme='panel'] .nav a.active svg { color: #2a1d00; }
+[data-theme='panel'] .status-card { background: #07130b; border-color: #1f3a27; color: var(--lcd); font-family: ui-monospace, monospace; }
+[data-theme='panel'] .status-card .muted { color: #3d9a5b; }
+[data-theme='panel'] .subnav a, [data-theme='panel'] .subnav button { text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.74rem; }
+
+/* ===================================================================== Neon */
+:root[data-theme='neon'] {
+  color-scheme: dark;
+  --bg: #060a18;
+  --surface: rgb(11 20 48 / 0.78);
+  --surface-2: rgb(16 28 64 / 0.85);
+  --surface-3: #18275c;
+  --border: rgb(54 140 255 / 0.26);
+  --border-strong: rgb(54 140 255 / 0.45);
+  --text: #dce8ff;
+  --text-2: #bcd0f0;
+  --muted: #8eaad6;
+  --accent: #36d1ff;
+  --accent-strong: #7fe3ff;
+  --on-primary: #03101f;
+  --primary-bg: #36d1ff;
+  --good: #3ee08f;
+  --good-bg: rgb(62 224 143 / 0.13);
+  --warn: #ffb23e;
+  --warn-bg: rgb(255 178 62 / 0.13);
+  --bad: #ff6b85;
+  --bad-bg: rgb(255 107 133 / 0.14);
+  --info: #36d1ff;
+  --info-bg: rgb(54 209 255 / 0.12);
+  --danger: #ff5c7a;
+  --series-read: #1593c4;
+  --series-write: #9b59e8;
+  --grid: #16244a;
+  --radius: 14px;
+  --radius-sm: 9px;
+  --violet: #b56cff;
+}
+[data-theme='neon'] body { background: radial-gradient(ellipse at 50% -10%, #12245a 0%, #060a18 55%) fixed, #060a18; }
+[data-theme='neon'] h1 {
+  background: linear-gradient(90deg, #e8f6ff, var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent;
+  letter-spacing: 0.04em;
+}
+[data-theme='neon'] .card-head h2, [data-theme='neon'] .card > h2, [data-theme='neon'] .panel-head h2, [data-theme='neon'] .page > h2 {
+  text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.85rem; color: #bfe9ff;
+}
+[data-theme='neon'] .card {
+  box-shadow: 0 0 24px #1d4ed822, inset 0 0 20px #36d1ff0a; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+[data-theme='neon'] .tile { background: rgb(4 8 22 / 0.5); }
+[data-theme='neon'] .kpi .value { color: #f2f8ff; text-shadow: 0 0 14px #36d1ff77; }
+:where([data-theme='neon']) button:where(:not(.card)) { background: linear-gradient(90deg, #36d1ff, #9b7bff); color: #03101f; font-weight: 600; box-shadow: 0 0 12px #36d1ff44; }
+[data-theme='neon'] button.secondary { background: rgb(4 8 22 / 0.4); color: var(--text); border-color: var(--border-strong); box-shadow: inset 0 0 10px #36d1ff14; }
+[data-theme='neon'] button.secondary:hover:not(:disabled) { box-shadow: 0 0 14px #36d1ff44; background: rgb(4 8 22 / 0.4); }
+[data-theme='neon'] button.danger { background: var(--danger); color: #fff; box-shadow: 0 0 12px #ff5c7a55; }
+[data-theme='neon'] button.attention { background: var(--warn); color: #1a1205; }
+[data-theme='neon'] button.link, [data-theme='neon'] .icon-btn, [data-theme='neon'] .segmented-btns button { background: none; box-shadow: none; }
+[data-theme='neon'] .segmented-btns button.on { background: var(--surface-3); color: var(--accent); box-shadow: 0 0 10px #36d1ff33; }
+[data-theme='neon'] input, [data-theme='neon'] select, [data-theme='neon'] textarea { background: rgb(4 8 22 / 0.6); }
+[data-theme='neon'] .members th, [data-theme='neon'] .data th { text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.68rem; }
+[data-theme='neon'] .sidebar { background: rgb(6 10 24 / 0.72); border-right: 1px solid var(--border); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+[data-theme='neon'] .brand-logo { background: transparent; border: 1.5px solid var(--accent); color: var(--accent); box-shadow: 0 0 10px #36d1ff66; }
+[data-theme='neon'] .brand-name { color: #e8f6ff; letter-spacing: 0.06em; }
+[data-theme='neon'] .nav a.active { background: linear-gradient(90deg, #36d1ff26, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+[data-theme='neon'] .nav a.active svg { filter: drop-shadow(0 0 4px var(--accent)); }
+[data-theme='neon'] .subnav button.active { background: linear-gradient(90deg, #36d1ff26, transparent); box-shadow: inset 2px 0 0 var(--accent); color: var(--text); }
+[data-theme='panel'] .subnav button.active { background: var(--accent); color: #2a1d00; }
+[data-theme='neon'] .status-card { box-shadow: inset 0 0 18px #36d1ff12; }
+[data-theme='neon'] .mobile-bar { background: rgb(6 10 24 / 0.85); backdrop-filter: blur(8px); }
