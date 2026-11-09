@@ -34,7 +34,7 @@ default NAS
 # Our system: kernel and initramfs here, everything else on the USB disk.
 label NAS
 kernel nas.krn
-append initrd=nas.ird root=PARTUUID=$PARTUUID ro console=tty0 console=ttyS0,9600n8 consoleblank=0 hpet=disable
+append initrd=nas.ird root=PARTUUID=$PARTUUID ro console=tty0 console=ttyS0,9600n8 consoleblank=0 hpet=disable quiet
 
 # RAIDiator (original entries, chosen from the front boot menu).
 label Normal
