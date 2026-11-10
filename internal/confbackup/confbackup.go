@@ -106,7 +106,7 @@ func NewService(st *store.Store, version string) *Service {
 // Collect gathers the current settings.
 func (s *Service) Collect(ctx context.Context) (Bundle, error) {
 	st := s.Store.Read()
-	st.Events, st.NetworkPending = nil, nil // a log, and a change in progress: not settings
+	st.Events, st.NetworkPending, st.FirewallPending = nil, nil, nil // a log, and changes in progress: not settings
 	b := Bundle{Format: format, Created: s.Now(), Version: s.Version, State: st, Accounts: []Account{}, SSHKeys: []string{}}
 	b.Hostname, _ = os.Hostname()
 	if out, err := s.Run(ctx, "timedatectl", "show", "-p", "Timezone", "--value"); err == nil {

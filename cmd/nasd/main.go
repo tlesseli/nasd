@@ -25,6 +25,7 @@ import (
 	"readynas/internal/backups"
 	"readynas/internal/confbackup"
 	"readynas/internal/disks"
+	"readynas/internal/firewall"
 	"readynas/internal/hardware"
 	"readynas/internal/jobs"
 	"readynas/internal/lcd"
@@ -157,6 +158,14 @@ func main() {
 	}
 	mon.Updates = sc
 
+	// Firewall: put the kept rules (or none) in place at once; the
+	// network-following loop starts with the other background work.
+	fw := firewall.NewService(st)
+	fw.Notify = al.Notify
+	if err := fw.Start(context.Background()); err != nil {
+		log.Printf("warning: firewall: %v", err)
+	}
+
 	// Settings backup: nightly encrypted copies on a data volume, restore.
 	cb := confbackup.NewService(st, version)
 	cb.Notify = al.Notify
@@ -214,6 +223,7 @@ func main() {
 		Monitor:    mon,
 		Power:      pw,
 		System:     sc,
+		Firewall:   fw,
 		Run:        run.Exec,
 		Sys:        *hwmon,
 		Button:     btn,
@@ -256,6 +266,7 @@ func main() {
 	go bk.RunScheduler(ctx)
 	go cb.RunNightly(ctx)
 	go mon.Run(ctx)
+	go fw.Watch(ctx)
 	go pw.RunTimer(ctx)
 	go bk.RunUSBWatcher(ctx)
 	go btn.Run(ctx)

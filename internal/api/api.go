@@ -32,6 +32,7 @@ import (
 	"readynas/internal/backups"
 	"readynas/internal/confbackup"
 	"readynas/internal/disks"
+	"readynas/internal/firewall"
 	"readynas/internal/hardware"
 	"readynas/internal/jobs"
 	"readynas/internal/lcd"
@@ -71,6 +72,7 @@ type Server struct {
 	Monitor    *monitor.Monitor
 	Power      *power.Service
 	System     *sysconf.Service
+	Firewall   *firewall.Service
 	Button     *hardware.Button
 	Fan        *hardware.Fan
 	Locator    *hardware.Locator
@@ -106,6 +108,7 @@ func (s *Server) Handler() http.Handler {
 	s.hardwareRoutes(mux)
 	s.overviewRoutes(mux)
 	s.settingsBackupRoutes(mux)
+	s.firewallRoutes(mux)
 	mux.Handle("GET /api/lcd", s.requireLogin(s.getLCD))
 	mux.Handle("POST /api/lcd", s.requireLogin(s.setLCD))
 	mux.Handle("POST /api/lcd/wake", s.requireLogin(s.wakeLCD))

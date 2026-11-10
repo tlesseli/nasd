@@ -22,7 +22,7 @@ import (
 //     everyone keeps their password;
 //  2. the state: shares, backup jobs, alerts, schedules... Kept from the
 //     running system: the web admin account (no surprise password change),
-//     the network (it could cut the NAS off), the fan and button
+//     the network and the firewall (they could cut the NAS off), the fan and button
 //     calibration (measured on this hardware) and the event log. Users
 //     created since the backup are kept too;
 //  3. SSH keys from the backup are added (none is removed);
@@ -45,6 +45,7 @@ func (s *Service) Restore(ctx context.Context, r run.Func, logf func(string, ...
 		next := b.State
 		next.Events, next.NetworkPending = cur.Events, cur.NetworkPending
 		next.Network, next.Fan, next.Button = cur.Network, cur.Fan, cur.Button
+		next.Firewall, next.FirewallPending = cur.Firewall, cur.FirewallPending // could cut the NAS off too
 		next.DiskTests.Reported = cur.DiskTests.Reported
 		next.Updates.LastReported = cur.Updates.LastReported
 		next.ConfigBackup.Passphrase = passphrase

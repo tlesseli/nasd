@@ -5,6 +5,7 @@ package api
 // keeps a hash of passwords, so the old one can't be shown: it is replaced.
 
 import (
+	"context"
 	"crypto/rand"
 	"errors"
 	"log"
@@ -40,10 +41,19 @@ func (s *Server) ResetAdminPassword() (string, error) {
 		s.Throttle.ResetAll()
 	}
 	log.Printf("admin password reset with the Reset button")
+	// The firewall goes off too: if it was what kept you out, you're back in.
+	firewallOff := ""
+	if s.Firewall != nil && s.Store.Read().Firewall.Enabled {
+		if err := s.Firewall.TurnOff(context.Background()); err != nil {
+			log.Printf("switching the firewall off: %v", err)
+		} else {
+			firewallOff = " The firewall was switched off: switch it on again in System > Firewall."
+		}
+	}
 	if s.Alerts != nil {
 		s.Alerts.Notify("admin_reset", "The admin password was reset at the NAS",
 			"Someone held the Reset button at the back of the NAS for 5 seconds: the admin password was replaced by a new one, shown on the front display. "+
-				"If it wasn't you, someone has physical access to your NAS.")
+				"If it wasn't you, someone has physical access to your NAS."+firewallOff)
 	}
 	return pw, nil
 }

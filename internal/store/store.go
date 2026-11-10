@@ -304,6 +304,22 @@ type FanCalib struct {
 	MinPercent   int       `json:"minPercent"`   // lowest speed allowed: runs, and restarts from standstill
 }
 
+// FirewallSettings: who may reach the NAS. Off = everyone (the NAS relies
+// on the router). On = only the allowed networks; everything else that
+// starts a connection to the NAS is dropped.
+type FirewallSettings struct {
+	Enabled bool     `json:"enabled"`
+	Scope   string   `json:"scope"` // "private" (every private network, default) or "local" (the NAS's own networks)
+	Allow   []string `json:"allow"` // more networks or addresses ("192.168.68.0/22", "100.64.1.2")
+}
+
+// FirewallChange is a firewall change waiting for confirmation: without
+// it, Previous comes back at Deadline.
+type FirewallChange struct {
+	Previous FirewallSettings `json:"previous"`
+	Deadline time.Time        `json:"deadline"`
+}
+
 // NetworkSettings: Managed=false leaves the network to the OS (DHCP).
 type NetworkSettings struct {
 	Managed    bool     `json:"managed"`
@@ -337,23 +353,25 @@ type BackupRun struct {
 // others are file-sharing accounts: they exist as Linux + Samba users and
 // can't log into the UI.
 type State struct {
-	Users          []User                 `json:"users"`
-	Shares         []Share                `json:"shares"`
-	Settings       Settings               `json:"settings"`
-	Backups        []BackupJob            `json:"backups"`
-	NextBackupID   int                    `json:"nextBackupId"`
-	Alerts         AlertSettings          `json:"alerts"`
-	Events         []Event                `json:"events"`      // most recent last, capped
-	Maintenance    map[string]Maintenance `json:"maintenance"` // by volume name
-	Power          PowerSettings          `json:"power"`
-	Network        NetworkSettings        `json:"network"`
-	NetworkPending *NetworkChange         `json:"networkPending,omitempty"`
-	Button         ButtonSettings         `json:"button"`
-	Fan            FanSettings            `json:"fan"`
-	LCD            LCDSettings            `json:"lcd"`
-	DiskTests      DiskTests              `json:"diskTests"`
-	Updates        UpdateSettings         `json:"updates"`
-	ConfigBackup   ConfigBackup           `json:"configBackup"`
+	Users           []User                 `json:"users"`
+	Shares          []Share                `json:"shares"`
+	Settings        Settings               `json:"settings"`
+	Backups         []BackupJob            `json:"backups"`
+	NextBackupID    int                    `json:"nextBackupId"`
+	Alerts          AlertSettings          `json:"alerts"`
+	Events          []Event                `json:"events"`      // most recent last, capped
+	Maintenance     map[string]Maintenance `json:"maintenance"` // by volume name
+	Power           PowerSettings          `json:"power"`
+	Network         NetworkSettings        `json:"network"`
+	NetworkPending  *NetworkChange         `json:"networkPending,omitempty"`
+	Button          ButtonSettings         `json:"button"`
+	Fan             FanSettings            `json:"fan"`
+	LCD             LCDSettings            `json:"lcd"`
+	DiskTests       DiskTests              `json:"diskTests"`
+	Updates         UpdateSettings         `json:"updates"`
+	ConfigBackup    ConfigBackup           `json:"configBackup"`
+	Firewall        FirewallSettings       `json:"firewall"`
+	FirewallPending *FirewallChange        `json:"firewallPending,omitempty"`
 }
 
 func (s *State) FindBackup(id int) *BackupJob {
@@ -480,6 +498,12 @@ func clone(st State) State {
 		p.Previous.Interfaces = slices.Clone(p.Previous.Interfaces)
 		p.Previous.DNS = slices.Clone(p.Previous.DNS)
 		out.NetworkPending = &p
+	}
+	out.Firewall.Allow = slices.Clone(st.Firewall.Allow)
+	if st.FirewallPending != nil {
+		p := *st.FirewallPending
+		p.Previous.Allow = slices.Clone(p.Previous.Allow)
+		out.FirewallPending = &p
 	}
 	out.Backups = make([]BackupJob, len(st.Backups))
 	for i, b := range st.Backups {

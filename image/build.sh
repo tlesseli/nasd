@@ -75,6 +75,7 @@ packages:
   - parted
   - lvm2                # volumes made by RAIDiator: RAID → LVM → ext4
   - rsync
+  - nftables            # the firewall (System > Firewall), off until switched on
   - exfatprogs
   - dosfstools
   - hdparm

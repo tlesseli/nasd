@@ -146,6 +146,7 @@ func TestCollectAndRestore(t *testing.T) {
 	s.Store.Update(func(st *store.State) error {
 		st.Users = []store.User{{Name: "admin", Admin: true, PasswordHash: "new-admin"}, {Name: "bob"}}
 		st.Network = store.NetworkSettings{DHCP: true}
+		st.Firewall = store.FirewallSettings{Enabled: true, Scope: "local"}
 		st.Fan = store.FanSettings{Mode: "curve", MinPercent: 38}
 		st.Events = []store.Event{{Kind: "system_started"}}
 		st.NextBackupID = 9
@@ -163,7 +164,7 @@ func TestCollectAndRestore(t *testing.T) {
 	if len(st.Shares) != 2 || len(st.Backups) != 1 || st.NextBackupID != 9 {
 		t.Errorf("shares/backups: %+v %+v %d", st.Shares, st.Backups, st.NextBackupID)
 	}
-	if !st.Network.DHCP || st.Fan.Mode != "curve" || len(st.Events) != 1 || st.Maintenance["data"].FsckAtBoot {
+	if !st.Network.DHCP || st.Fan.Mode != "curve" || !st.Firewall.Enabled || len(st.Events) != 1 || st.Maintenance["data"].FsckAtBoot {
 		t.Errorf("kept from the running system: %+v %+v %+v", st.Network, st.Fan, st.Events)
 	}
 	if st.ConfigBackup.Passphrase != "the-passphrase" {

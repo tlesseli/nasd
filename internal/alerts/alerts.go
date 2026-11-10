@@ -64,6 +64,7 @@ var Kinds = []Kind{
 	{"admin_reset", "The admin password was reset at the NAS", "warning", true},
 	{"events_cleared", "Events and logs were cleared", "info", false},
 	{"ssh_keys", "Administrator SSH keys changed", "warning", true},
+	{"firewall", "A firewall change was undone", "warning", false},
 	{"settings_restored", "Settings were restored from a backup", "warning", true},
 	{"settings_backup_failed", "The nightly copy of the settings failed", "warning", false},
 	{"fan_stall", "A fan stopped at low speed", "warning", true},

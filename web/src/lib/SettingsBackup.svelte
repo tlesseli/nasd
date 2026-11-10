@@ -107,7 +107,7 @@
   function askRestore() {
     dialog = {
       title: t('Restore {name}?', { name: source.name }),
-      message: t('Users (with their passwords), shares, backup jobs, alerts and schedules become those of the copy. Kept as they are: the admin password, the network settings, the fan, and users created since. Nothing on the volumes is deleted.'),
+      message: t('Users (with their passwords), shares, backup jobs, alerts and schedules become those of the copy. Kept as they are: the admin password, the network and firewall settings, the fan, and users created since. Nothing on the volumes is deleted.'),
       askPassword: true,
       confirmLabel: t('Restore'),
       onConfirm: async (password) => {
