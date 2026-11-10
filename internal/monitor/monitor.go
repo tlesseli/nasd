@@ -191,7 +191,7 @@ func (m *Monitor) checkVolume(ctx context.Context, v volumes.Volume, st store.St
 			fmt.Sprintf("Volume %s (%s) lost more disks than it can survive. Its data is not accessible.", v.Name, v.Level))
 	case missingDisks(v) > 0 || hasFaulty(v):
 		cond("raid_degraded:"+v.Name, "raid_degraded", "Volume "+v.Name+" is degraded",
-			fmt.Sprintf("Volume %s (%s) lost a disk and has no redundancy left: one more failure loses data. Replace the disk in the Volumes page.", v.Name, v.Level))
+			fmt.Sprintf("Volume %s (%s) lost a disk and has no redundancy left: one more failure loses data. Put the disk back or replace it in the Volumes page.", v.Name, v.Level))
 	}
 	if v.TotalBytes > 0 && v.UsedBytes*100 >= v.TotalBytes*int64(fullPct) {
 		cond("volume_full:"+v.Name, "volume_full", fmt.Sprintf("Volume %s is %d%% full", v.Name, v.UsedBytes*100/v.TotalBytes),

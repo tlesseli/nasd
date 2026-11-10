@@ -103,6 +103,9 @@
   let freeDisks = $derived(dataDisks.filter((d) => !d.usage && !d.partitions?.length))
   let dirtyDisks = $derived(dataDisks.filter((d) => d.usage || d.partitions?.length))
   let busy = $derived(job?.status === 'running')
+  // Disks that left a volume and came back with its superblock: disk -> volume.
+  let returningTo = $derived(Object.fromEntries(pools.flatMap((v) => (v.returning ?? []).map((r) => [r.disk, v.name]))))
+  const returningDisks = (v) => [...new Set((v.returning ?? []).map((r) => r.disk))]
 
   const statusClass = {
     healthy: 'good', syncing: 'info', rebuilding: 'info', checking: 'info', reshaping: 'info',
@@ -326,7 +329,7 @@
                 <td>{d.model || '—'}</td>
                 <td class="mono small opt">{d.serial || '—'}</td>
                 <td>{formatBytes(d.sizeBytes)}</td>
-                <td class="mono">{memberOf[d.name] ?? (dirty ? t('old data') : d.role === 'data' ? t('free') : '—')}</td>
+                <td class="mono">{memberOf[d.name] ?? (returningTo[d.name] ? t('was in {name}', { name: returningTo[d.name] }) : dirty ? t('old data') : d.role === 'data' ? t('free') : '—')}</td>
                 <td>{d.health?.temperatureC ? `${d.health.temperatureC} °C` : '—'}</td>
                 <td class="opt">{d.health?.powerOnHours ? `${d.health.powerOnHours.toLocaleString()} h` : '—'}</td>
                 <td><span class="badge {h.cls}">{h.text}</span>
@@ -373,9 +376,19 @@
             {#if v.sync.action === 'resync'}<span class="muted small">{t('The volume is usable during the initial sync, just slower.')}</span>{/if}
           </div>
         {/if}
-        {#if v.status === 'degraded' && missing(v) > 0}
-          <p class="warn-box">{t('A disk is missing: the volume has no redundancy left. Add a disk to start the rebuild.')}</p>
-        {/if}
+        {#each returningDisks(v) as name (name)}
+          {@const d = disks.find((x) => x.name === name)}
+          <div class="notice-box">
+            <p><strong>{t('{disk} was part of this volume and is back.', { disk: d?.bay ? t('Bay {n}', { n: d.bay }) + ` (${name})` : name })}</strong>
+              {v.bitmap ? t('Putting it back copies only what changed while it was out: usually a few minutes.') : t('This volume has no change map: putting it back rebuilds the whole disk (hours with large disks).')}
+              {#if systemArrays.some((o) => o.returning?.some((r) => r.disk === name))}{t('Its copies of the system are put back too.')}{/if}</p>
+            <button onclick={() => run(() => startJob(`/api/volumes/${encodeURIComponent(v.name)}/readd`, { disk: name }))} disabled={busy}>{t('Put it back')}</button>
+          </div>
+        {:else}
+          {#if v.status === 'degraded' && missing(v) > 0}
+            <p class="warn-box">{t('A disk is missing: the volume has no redundancy left. Add a disk to start the rebuild.')}</p>
+          {/if}
+        {/each}
         {#if !v.managed && !v.mountpoint}
           {#if v.filesystem === 'ext4' || v.filesystem === 'btrfs'}
             <div class="notice-box">
@@ -435,6 +448,17 @@
           </div>
         {/if}
 
+        {#if v.level !== 'raid0'}
+          <div class="stack bitmap">
+            <h3>{t('Fast rebuild')}</h3>
+            <div class="add">
+              <span class="badge {v.bitmap ? 'good' : 'neutral'}">{v.bitmap ? t('On') : t('Off')}</span>
+              {#if !v.bitmap}<button class="secondary" onclick={() => run(() => startJob(`/api/volumes/${encodeURIComponent(v.name)}/bitmap`, {}))} disabled={busy || !!v.sync}>{t('Turn on')}</button>{/if}
+            </div>
+            <p class="hint">{t('A change map (write-intent bitmap) remembers what was written while a disk was out. Putting the disk back then takes minutes instead of hours. Writes get slightly slower.')}</p>
+          </div>
+        {/if}
+
         <VolumeMaintenance volume={v} {busy} onJob={(j) => (job = j)} />
 
         <div class="actions">
@@ -464,5 +488,5 @@
   @media (max-width: 860px) { :global(.opt) { display: none; } }
   .tiles :global(.label) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .table-note { padding: 0.75rem 1.25rem 1rem; }
-  .add-disk { gap: 0.5rem; }
+  .add-disk, .bitmap { gap: 0.5rem; }
 </style>

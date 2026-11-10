@@ -9,6 +9,8 @@ package api
 //	POST /api/volumes/{name}/remove      {disk}                               -> 202 job
 //	POST /api/volumes/{name}/expand      {disk}  (free disk or current spare)  -> 202 job
 //	POST /api/volumes/{name}/grow-fs                                          -> 202 job
+//	POST /api/volumes/{name}/readd       {disk}  (a former member that came back) -> 202 job
+//	POST /api/volumes/{name}/bitmap                                           -> 202 job
 //	POST /api/disks/{name}/erase         {confirm: "<disk name>"}             -> 202 job
 //	GET  /api/jobs                       -> recent jobs, newest first
 //	GET  /api/jobs/{id}                  -> one job with its log
@@ -39,6 +41,8 @@ func (s *Server) volumeRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/volumes/{name}/expand", s.requireLogin(s.expandVolume))
 	mux.Handle("POST /api/volumes/{name}/grow-fs", s.requireLogin(s.growFS))
 	mux.Handle("POST /api/volumes/{name}/adopt", s.requireLogin(s.adoptVolume))
+	mux.Handle("POST /api/volumes/{name}/readd", s.requireLogin(s.reAddDisk))
+	mux.Handle("POST /api/volumes/{name}/bitmap", s.requireLogin(s.addBitmap))
 	mux.Handle("POST /api/disks/{name}/erase", s.requireLogin(s.eraseDisk))
 	mux.Handle("GET /api/jobs", s.requireLogin(s.listJobs))
 	mux.Handle("GET /api/jobs/{id}", s.requireLogin(s.getJob))
@@ -165,6 +169,49 @@ func (s *Server) removeDisk(w http.ResponseWriter, r *http.Request) {
 	}
 	s.startJob(w, fmt.Sprintf("Remove %s from volume %s", m.Disk, v.Name), time.Hour, func(ctx context.Context, j *jobs.Job) error {
 		return s.Volumes.RemoveDisk(ctx, j.Run, v, m)
+	})
+}
+
+// reAddDisk puts back a disk that was pulled out (or dropped off) and still
+// carries the volume's superblock: no erase, and with a bitmap only the
+// changes are copied.
+func (s *Server) reAddDisk(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Disk string `json:"disk"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	all, vols, err := s.inventory(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	v, ok := pick(w, vols, r.PathValue("name"))
+	if !ok {
+		return
+	}
+	plan, err := volumes.ValidateReAdd(v, req.Disk, all, vols)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.startJob(w, fmt.Sprintf("Put %s back into volume %s", req.Disk, v.Name), time.Hour, func(ctx context.Context, j *jobs.Job) error {
+		return s.Volumes.ReAdd(ctx, j.Run, j.Logf, plan)
+	})
+}
+
+func (s *Server) addBitmap(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.findVolume(w, r)
+	if !ok {
+		return
+	}
+	if err := volumes.ValidateBitmap(v); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.startJob(w, "Turn on fast rebuilds for "+v.Name, 10*time.Minute, func(ctx context.Context, j *jobs.Job) error {
+		return s.Volumes.AddBitmap(ctx, j.Run, v)
 	})
 }
 

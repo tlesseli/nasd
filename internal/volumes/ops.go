@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -106,6 +107,11 @@ func (s *Service) Create(ctx context.Context, r run.Func, req CreateRequest, sel
 	md := "/dev/md/" + req.Name
 	args := []string{"--create", md, "--run", "--metadata=1.2", "--name=" + req.Name,
 		"--level=" + req.Level, "--raid-devices=" + strconv.Itoa(len(parts))}
+	if req.Level != "raid0" {
+		// A write-intent bitmap: a disk pulled out and put back only
+		// receives what changed meanwhile (see ReAdd).
+		args = append(args, "--bitmap=internal")
+	}
 	if _, err := r(ctx, "mdadm", append(args, parts...)...); err != nil {
 		return err
 	}
@@ -449,6 +455,88 @@ func (s *Service) RemoveDisk(ctx context.Context, r run.Func, v Volume, m Member
 	r(ctx, "wipefs", "-a", m.Device)
 	r(ctx, "wipefs", "-a", "/dev/"+m.Disk)
 	return s.saveMdadmConf(ctx, r)
+}
+
+// Rejoin is one partition going back into its array.
+type Rejoin struct {
+	Array  string // /dev/md126
+	Name   string // data, system, swap...
+	Device string // /dev/sdc3
+}
+
+// ValidateReAdd lists what a returning disk puts back: its partition of v,
+// plus its partitions of the other arrays (the system and swap copies, on
+// RAIDiator's layout). The disk must be a data disk.
+func ValidateReAdd(v Volume, disk string, all []disks.Disk, vols []Volume) ([]Rejoin, error) {
+	i := slices.IndexFunc(all, func(d disks.Disk) bool { return d.Name == disk })
+	if i < 0 {
+		return nil, fmt.Errorf("disk %s not found", disk)
+	}
+	if all[i].Role != "data" {
+		return nil, fmt.Errorf("%s is not a data disk", disk)
+	}
+	if !slices.ContainsFunc(v.Returning, func(r Returning) bool { return r.Disk == disk }) {
+		return nil, fmt.Errorf("%s was not a member of volume %s, or the volume isn't missing a disk", disk, v.Name)
+	}
+	var plan []Rejoin
+	for _, o := range vols {
+		for _, r := range o.Returning {
+			if r.Disk == disk {
+				plan = append(plan, Rejoin{Array: o.Device, Name: o.Name, Device: r.Device})
+			}
+		}
+	}
+	// The small system arrays first: their copies are back within a minute.
+	// The kernel rebuilds arrays sharing a disk one after the other anyway.
+	sort.SliceStable(plan, func(a, b int) bool { return plan[a].Array != v.Device && plan[b].Array == v.Device })
+	return plan, nil
+}
+
+// ReAdd puts a returning disk's partitions back into their arrays.
+// "mdadm --re-add" takes the member back in its old place: with a bitmap,
+// only the regions written while it was out are copied. Without a bitmap
+// (or if the disk is too far behind) the kernel refuses; the partition then
+// joins as a new member, which means a full rebuild. Its old superblock must
+// be cleared first, or mdadm refuses to turn a former member into a spare.
+func (s *Service) ReAdd(ctx context.Context, r run.Func, logf func(string, ...any), plan []Rejoin) error {
+	var errs []error
+	for _, p := range plan {
+		if _, err := r(ctx, "mdadm", p.Array, "--re-add", p.Device); err == nil {
+			logf("%s is back in %s: only the changes are copied", p.Device, p.Name)
+			continue
+		}
+		logf("%s can't resume its place in %s: it joins as a new disk (full rebuild)", p.Device, p.Name)
+		if _, err := r(ctx, "mdadm", "--zero-superblock", p.Device); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if _, err := r(ctx, "mdadm", p.Array, "--add", p.Device); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// ValidateBitmap: a bitmap needs redundancy, and mdadm can't add one during
+// a sync.
+func ValidateBitmap(v Volume) error {
+	switch {
+	case v.Bitmap:
+		return errors.New("this volume already has a bitmap")
+	case v.Level == "raid0":
+		return errors.New("RAID 0 has no redundancy: nothing to rebuild")
+	case v.Sync != nil:
+		return fmt.Errorf("wait for the current %s to finish", v.Sync.Action)
+	}
+	return nil
+}
+
+// AddBitmap adds a write-intent bitmap to a running array: it fits in the
+// space mdadm reserved next to the superblock, no data moves, and the
+// volume stays in use.
+func (s *Service) AddBitmap(ctx context.Context, r run.Func, v Volume) error {
+	_, err := r(ctx, "mdadm", "--grow", v.Device, "--bitmap=internal")
+	return err
 }
 
 // ValidateExpand checks that a volume can grow by one disk. disk is either a

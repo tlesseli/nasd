@@ -2,8 +2,10 @@ package volumes
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -46,11 +48,17 @@ func fakeSys(t *testing.T) string {
 type recorder struct {
 	cmds   []string
 	output map[string]string // command prefix -> stdout
+	fail   []string          // command prefixes that exit with an error
 }
 
 func (r *recorder) run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	cmd := name + " " + strings.Join(args, " ")
 	r.cmds = append(r.cmds, cmd)
+	for _, prefix := range r.fail {
+		if strings.HasPrefix(cmd, prefix) {
+			return nil, errors.New("exit status 1")
+		}
+	}
 	for prefix, out := range r.output {
 		if strings.HasPrefix(cmd, prefix) {
 			return []byte(out), nil
@@ -171,7 +179,7 @@ func TestCreateCommands(t *testing.T) {
 	for _, want := range []string{
 		// smallest disk is 2 GiB = 2048 MiB, minus the 64 MiB margin
 		"parted -s /dev/sdc -- mklabel gpt mkpart nas 1MiB 1984MiB set 1 raid on",
-		"mdadm --create /dev/md/media --run --metadata=1.2 --name=media --level=raid5 --raid-devices=3 /dev/sda1 /dev/sdb1 /dev/sdc1",
+		"mdadm --create /dev/md/media --run --metadata=1.2 --name=media --level=raid5 --raid-devices=3 --bitmap=internal /dev/sda1 /dev/sdb1 /dev/sdc1",
 		"mkfs.ext4 -F -q -m 0 -O quota -E quotatype=usrquota -L media /dev/md/media",
 		"systemd-escape --path --suffix=mount " + filepath.Join(s.MountRoot, "media"),
 		"systemctl start data-media.mount",
@@ -342,5 +350,82 @@ func TestDeleteKeepsSharedDisks(t *testing.T) {
 	}
 	if !strings.Contains(all, "wipefs -a /dev/sda1") {
 		t.Errorf("the member partition itself must be wiped\n%s", all)
+	}
+}
+
+func TestFindReturning(t *testing.T) {
+	s, rec := newTestService(t)
+	rec.output["mdadm --detail --export"] = "MD_DEVNAME=media\nMD_UUID=aa:bb:cc:dd\n"
+	// sdb came back with its old partition 1; sde carries another array's
+	// superblock; sda is already a member and must not be examined.
+	for _, p := range []string{"sda/sda1", "sdb/sdb1", "sde/sde1"} {
+		dir := filepath.Join(s.Sys, "block", p)
+		os.MkdirAll(dir, 0o755)
+		os.WriteFile(filepath.Join(dir, "partition"), []byte("1\n"), 0o644)
+	}
+	rec.output["mdadm --examine --export /dev/sdb1"] = "MD_LEVEL=raid5\nMD_UUID=aa:bb:cc:dd\n"
+	rec.output["mdadm --examine --export /dev/sde1"] = "MD_LEVEL=raid1\nMD_UUID=99:99:99:99\n"
+	vols, err := s.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := vols[0].Returning; len(got) != 1 || got[0] != (Returning{Disk: "sdb", Device: "/dev/sdb1"}) {
+		t.Errorf("returning: %+v", got)
+	}
+	if strings.Contains(strings.Join(rec.cmds, "\n"), "--examine --export /dev/sda1") {
+		t.Error("a current member was examined")
+	}
+}
+
+func TestValidateReAdd(t *testing.T) {
+	all := []disks.Disk{{Name: "sdc", Role: "data"}, {Name: "sdu", Role: "usb"}}
+	data := Volume{Name: "data", Device: "/dev/md126", Degraded: 1, Returning: []Returning{{"sdc", "/dev/sdc3"}, {"sdu", "/dev/sdu3"}}}
+	vols := []Volume{
+		data,
+		{Name: "swap", Device: "/dev/md125", Degraded: 1, Returning: []Returning{{"sdc", "/dev/sdc2"}}},
+		{Name: "system", Device: "/dev/md127", Degraded: 1, Returning: []Returning{{"sdc", "/dev/sdc1"}}},
+	}
+	plan, err := ValidateReAdd(data, "sdc", all, vols)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Rejoin{{"/dev/md125", "swap", "/dev/sdc2"}, {"/dev/md127", "system", "/dev/sdc1"}, {"/dev/md126", "data", "/dev/sdc3"}}
+	if !slices.Equal(plan, want) {
+		t.Errorf("plan %+v, want %+v", plan, want)
+	}
+	if _, err := ValidateReAdd(data, "sdu", all, vols); err == nil {
+		t.Error("a USB disk was accepted")
+	}
+	if _, err := ValidateReAdd(vols[1], "sdz", append(all, disks.Disk{Name: "sdz", Role: "data"}), vols); err == nil {
+		t.Error("a disk that never belonged to the volume was accepted")
+	}
+}
+
+func TestReAddFallsBackToFullRebuild(t *testing.T) {
+	s, rec := newTestService(t)
+	rec.fail = []string{"mdadm /dev/md126 --re-add"} // no bitmap: the kernel refuses
+	plan := []Rejoin{{"/dev/md127", "system", "/dev/sdc1"}, {"/dev/md126", "data", "/dev/sdc3"}}
+	if err := s.ReAdd(context.Background(), rec.run, func(string, ...any) {}, plan); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"mdadm /dev/md127 --re-add /dev/sdc1",
+		"mdadm /dev/md126 --re-add /dev/sdc3",
+		"mdadm --zero-superblock /dev/sdc3",
+		"mdadm /dev/md126 --add /dev/sdc3",
+	}
+	if !slices.Equal(rec.cmds, want) {
+		t.Errorf("commands:\n%s", strings.Join(rec.cmds, "\n"))
+	}
+}
+
+func TestValidateBitmap(t *testing.T) {
+	for _, v := range []Volume{{Level: "raid5", Bitmap: true}, {Level: "raid0"}, {Level: "raid1", Sync: &Sync{Action: "resync"}}} {
+		if ValidateBitmap(v) == nil {
+			t.Errorf("accepted %+v", v)
+		}
+	}
+	if err := ValidateBitmap(Volume{Level: "raid5", Degraded: 1}); err != nil {
+		t.Error(err)
 	}
 }

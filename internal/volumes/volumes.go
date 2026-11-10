@@ -78,6 +78,23 @@ type Volume struct {
 	// arrays live on the data disks too (partitions 1 and 2), mirrored on
 	// each; they are never deleted or adopted.
 	System string `json:"system,omitempty"`
+	// ArrayUUID: the RAID's own UUID (mdadm's MD_UUID), written in every
+	// member's superblock. It recognises a disk that comes back.
+	ArrayUUID string `json:"arrayUUID,omitempty"`
+	// Bitmap: the array keeps a write-intent bitmap, a map of the regions
+	// written while a member was missing. A member put back then only
+	// receives those regions (minutes) instead of a full rebuild (hours).
+	Bitmap bool `json:"bitmap"`
+	// Returning: partitions of disks that are no longer in the array but
+	// still carry its superblock, e.g. a disk pulled out and pushed back in.
+	// Only listed while the array is missing members.
+	Returning []Returning `json:"returning,omitempty"`
+}
+
+// Returning is a former member found on a disk outside the array.
+type Returning struct {
+	Disk   string `json:"disk"`   // sdc
+	Device string `json:"device"` // /dev/sdc3
 }
 
 // FSDevice is the block device holding the filesystem: the array itself,
@@ -148,6 +165,7 @@ func (s *Service) List(ctx context.Context) ([]Volume, error) {
 		s.fillNameAndFS(ctx, &v)
 		vols = append(vols, v)
 	}
+	s.findReturning(ctx, vols)
 	sort.Slice(vols, func(i, j int) bool { return vols[i].Name < vols[j].Name })
 	return vols, nil
 }
@@ -206,6 +224,9 @@ func (s *Service) readSysfs(dev string) (Volume, bool) {
 	}
 	sort.Slice(v.Members, func(i, j int) bool { return v.Members[i].Disk < v.Members[j].Disk })
 
+	if loc := readStr(md, "bitmap/location"); loc != "" && loc != "none" {
+		v.Bitmap = true
+	}
 	v.LastSyncAction = readStr(md, "last_sync_action")
 	v.MismatchCount = int64(readInt(md, "mismatch_cnt"))
 
@@ -256,6 +277,7 @@ func status(v Volume, arrayState string) string {
 func (s *Service) fillNameAndFS(ctx context.Context, v *Volume) {
 	if out, err := s.Run(ctx, "mdadm", "--detail", "--export", v.Device); err == nil {
 		kv := parseExport(string(out))
+		v.ArrayUUID = kv["MD_UUID"]
 		switch {
 		case kv["MD_DEVNAME"] != "":
 			v.Name = kv["MD_DEVNAME"]
@@ -353,6 +375,39 @@ func (s *Service) fillLVM(ctx context.Context, v *Volume) []*string {
 	lv := lvs[0]
 	v.LV, v.Filesystem, v.UUID = lv.Path, deref(lv.FSType), deref(lv.UUID)
 	return lv.Mountpoints
+}
+
+// findReturning looks for former members of the degraded arrays: partitions
+// outside every array whose RAID superblock names one of them. The kernel
+// doesn't put such a disk back by itself ("not adding to active array"):
+// the Volumes page offers it, see ReAdd. Nothing runs on a healthy NAS.
+func (s *Service) findReturning(ctx context.Context, vols []Volume) {
+	byUUID := map[string]*Volume{}
+	for i := range vols {
+		if vols[i].Degraded > 0 && vols[i].ArrayUUID != "" {
+			byUUID[vols[i].ArrayUUID] = &vols[i]
+		}
+	}
+	if len(byUUID) == 0 {
+		return
+	}
+	members := MemberDisks(vols)
+	parts, _ := filepath.Glob(filepath.Join(s.Sys, "block", "*", "*", "partition"))
+	sort.Strings(parts)
+	for _, p := range parts {
+		dir := filepath.Dir(p)
+		disk, part := filepath.Base(filepath.Dir(dir)), filepath.Base(dir)
+		if members[disk] != "" || strings.HasPrefix(disk, "md") {
+			continue
+		}
+		out, err := s.Run(ctx, "mdadm", "--examine", "--export", "/dev/"+part)
+		if err != nil {
+			continue
+		}
+		if v := byUUID[parseExport(string(out))["MD_UUID"]]; v != nil {
+			v.Returning = append(v.Returning, Returning{Disk: disk, Device: "/dev/" + part})
+		}
+	}
 }
 
 // inSwaps: the device is an active swap area.
