@@ -253,6 +253,17 @@ type FanSettings struct {
 	FixedPercent int `json:"fixedPercent"`
 	// MaxRPM: the fan's speed at 100%, measured (scale of the gauge).
 	MaxRPM int `json:"maxRpm"`
+	// Calib: what the fan test measured, per output (hwmon0/pwm1...).
+	Calib map[string]FanCalib `json:"calib,omitempty"`
+}
+
+// FanCalib is the result of the fan test of one output.
+type FanCalib struct {
+	Tested       time.Time `json:"tested"`
+	HasFan       bool      `json:"hasFan"`       // a fan turns when the output is at 100%
+	MaxRPM       int       `json:"maxRpm"`       // its speed at 100%
+	StallPercent int       `json:"stallPercent"` // the speed at which it stopped (0: never did)
+	MinPercent   int       `json:"minPercent"`   // lowest speed allowed: runs, and restarts from standstill
 }
 
 // NetworkSettings: Managed=false leaves the network to the OS (DHCP).

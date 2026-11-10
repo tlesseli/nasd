@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"time"
 
+	"readynas/internal/jobs"
 	"readynas/internal/store"
 )
 
@@ -25,6 +26,7 @@ func (s *Server) hardwareRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/button/learn", s.requireLogin(s.learnButton))
 	mux.Handle("POST /api/button/press", s.requireLogin(s.pressButton))
 	mux.Handle("POST /api/fan", s.requireLogin(s.saveFan))
+	mux.Handle("POST /api/fan/test", s.requireLogin(s.testFan))
 	mux.Handle("POST /api/disks/{name}/locate", s.requireLogin(s.locateDisk))
 	mux.Handle("POST /api/disks/{name}/locate/stop", s.requireLogin(s.stopLocate))
 }
@@ -97,4 +99,18 @@ func (s *Server) locateDisk(w http.ResponseWriter, r *http.Request) {
 func (s *Server) stopLocate(w http.ResponseWriter, r *http.Request) {
 	s.Locator.Stop(r.PathValue("name"))
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// testFan runs the fan test of one output as a job (about 90 s): does a fan
+// turn on it, at which speed does it stall, the minimum it may run at.
+func (s *Server) testFan(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		PWM string `json:"pwm"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	s.startJob(w, "Test fan "+req.PWM, 10*time.Minute, func(ctx context.Context, j *jobs.Job) error {
+		return s.Fan.Calibrate(ctx, req.PWM, j.Logf)
+	})
 }

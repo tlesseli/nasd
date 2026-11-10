@@ -18,9 +18,10 @@
       backups = await api.get('/api/backups')
       button = $state.snapshot(hw.button)
       fan = $state.snapshot(hw.fan)
-      if (!fan.minPercent) Object.assign(fan, { minPercent: 30, lowTemp: 35, highTemp: 45 })
+      if (!fan.mode) fan.mode = 'full' // never the chip's automatic mode
+      if (!fan.minPercent) Object.assign(fan, { minPercent: 40, lowTemp: 38, highTemp: 50 })
       if (!fan.fixedPercent) fan.fixedPercent = 50
-      if (!fan.pwm && hw.outputs.length) fan.pwm = hw.outputs[0].id
+      if (!hw.outputs.find((o) => o.id === fan.pwm)?.hasFan) fan.pwm = hw.outputs.find((o) => o.hasFan)?.id ?? ''
     }
   }
   async function loadLCD() {
@@ -73,6 +74,28 @@
   const tierText = { phase: N_('startup / shutdown'), critical: N_('critical problem (blinking)'), network: N_('network change to confirm'),
     ups: N_('power cut'), feedback: N_('button / locate'), operation: N_('operation in progress'), warning: N_('warning'), routine: N_('routine information') }
   const enableText = { 0: N_('full speed'), 1: N_('manual (nasd)'), 2: N_('automatic (motherboard)') }
+  // Fan test of one output (a job, about 90 s): the result shows in the table.
+  async function testFan(id) {
+    msg = null
+    try {
+      await api.post('/api/fan/test', { pwm: id })
+      msg = { ok: true, text: t('Fan test started on {output}: about a minute and a half. The fan speeds up and slows down meanwhile.', { output: id }) }
+      const wait = setInterval(async () => {
+        await load(true)
+        if (!hw.fanStatus.testing) {
+          clearInterval(wait)
+          await load() // new minimum and fan detection
+        }
+      }, 3000)
+    } catch (e) {
+      msg = { ok: false, text: e.message }
+    }
+  }
+  let chosen = $derived(hw?.outputs.find((o) => o.id === fan?.pwm))
+  let minAllowed = $derived(chosen?.minPercent ?? 20)
+  const outState = (o) => !o.input ? t('no speed sensor') : !o.tested ? (o.hasFan ? t('fan · not tested yet') : t('not tested yet'))
+    : o.hasFan ? t('fan · minimum {percent}%', { percent: o.minPercent }) : t('no fan')
+
   // The controlled output (or the first one with a fan), for the gauges.
   let gaugeOut = $derived(hw?.outputs.find((o) => o.id === (hw.fan.pwm || fan?.pwm)) ?? hw?.outputs.find((o) => o.fanRpm >= 0))
   let rpmMax = $derived(Math.max(hw?.fan.maxRpm || 0, gaugeOut?.fanRpm || 0, 1000))
@@ -170,35 +193,42 @@
         {/if}
       </div>
       <table class="members">
-        <thead><tr><th>{t('Output')}</th><th>{t('Chip')}</th><th>{t('Speed')}</th><th>{t('Mode')}</th></tr></thead>
+        <thead><tr><th>{t('Output')}</th><th>{t('Fan')}</th><th>{t('Speed')}</th><th>{t('Mode')}</th><th></th></tr></thead>
         <tbody>
           {#each hw.outputs as o (o.id)}
-            <tr><td class="mono">{o.id}</td><td>{o.chip}</td>
+            <tr class:inactive={o.tested ? !o.hasFan : !o.input}><td class="mono">{o.id} <span class="muted small">{o.chip}</span></td>
+              <td class="small">{outState(o)}</td>
               <td>{o.fanRpm >= 0 ? `${o.fanRpm} RPM · ` : ''}{Math.round((o.value * 100) / 255)}%</td>
-              <td class="small">{enableText[o.enable] ? t(enableText[o.enable]) : o.enable}</td></tr>
+              <td class="small">{enableText[o.enable] ? t(enableText[o.enable]) : o.enable}</td>
+              <td class="right">{#if o.input}<button class="link" onclick={() => testFan(o.id)} disabled={!!hw.fanStatus.testing}>
+                {hw.fanStatus.testing === o.id ? t('Testing…') : o.tested ? t('Test again') : t('Test')}</button>{/if}</td></tr>
           {/each}
         </tbody>
       </table>
       <label>
         {t('Control')}
         <select bind:value={fan.mode}>
-          <option value="">{t('By the motherboard (default)')}</option>
           <option value="curve">{t('By the NAS, from disk temperatures')}</option>
           <option value="fixed">{t('Fixed speed')}</option>
           <option value="full">{t('Always full speed')}</option>
         </select>
       </label>
-      {#if fan.mode}
-        <label>{t('Output')} <select bind:value={fan.pwm}>{#each hw.outputs as o (o.id)}<option>{o.id}</option>{/each}</select></label>
+      {#if fan.mode !== 'full'}
+        <label>{t('Output')} <select bind:value={fan.pwm}>
+          {#each hw.outputs as o (o.id)}<option value={o.id} disabled={!o.hasFan}>{o.id} · {outState(o)}</option>{/each}
+        </select></label>
+      {/if}
+      {#if fan.mode !== 'full' && chosen}
+        <p class="hint">{t('Measured minimum for this fan: {min}% (it turns and restarts from standstill). The NAS never sets it lower.', { min: chosen.minPercent })}</p>
       {/if}
       {#if fan.mode === 'fixed'}
         <label>{t('Speed:')} <strong>{fan.fixedPercent}%</strong>
-          <input type="range" min="20" max="100" step="5" bind:value={fan.fixedPercent} /></label>
+          <input type="range" min={minAllowed} max="100" step="5" bind:value={fan.fixedPercent} /></label>
         <p class="hint">{t('The fan keeps this speed. If a disk reaches {temp} °C, it goes to full speed until the disk cools down.', { temp: SAFETY })}</p>
       {/if}
       {#if fan.mode === 'curve'}
         <div class="two-cols">
-          <label>{t('Minimum speed (%)')} <input type="number" min="20" max="100" bind:value={fan.minPercent} /></label>
+          <label>{t('Minimum speed (%)')} <input type="number" min={minAllowed} max="100" bind:value={fan.minPercent} /></label>
           <label>{t('Up to (°C)')} <input type="number" min="20" max="69" bind:value={fan.lowTemp} /></label>
           <label>{t('Full speed from (°C)')} <input type="number" min="21" max="70" bind:value={fan.highTemp} /></label>
         </div>
@@ -221,5 +251,6 @@
     background: #1d3fd8; color: #e8f0ff; font-family: ui-monospace, 'DejaVu Sans Mono', monospace; font-size: 1.15rem;
     letter-spacing: 0.08em; line-height: 1.35; white-space: pre; box-shadow: inset 0 0 18px rgb(0 0 0 / 0.35); }
   .lcd.off { background: #101a44; color: #5866a3; }
+  tr.inactive td { opacity: 0.45; }
   .gauges { display: flex; flex-wrap: wrap; gap: 1.5rem; justify-content: space-around; margin: 0.5rem 0 1rem; }
 </style>

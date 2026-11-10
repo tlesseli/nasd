@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -123,10 +124,11 @@ func TestFanControlAndRelease(t *testing.T) {
 	if s := f.Status(); s.Percent != 65 || s.HottestDisk != 40 {
 		t.Errorf("status %+v", s)
 	}
-	// Back to the motherboard: the original automatic mode returns.
+	// No mode: full speed, in manual mode. Never the chip's automatic mode
+	// (on the ReadyNAS it lets the fan stall).
 	f.Save(context.Background(), store.FanSettings{})
-	if read(chip, "pwm1_enable") != "2" {
-		t.Errorf("not released: enable=%s", read(chip, "pwm1_enable"))
+	if read(chip, "pwm1_enable") != "1" || read(chip, "pwm1") != "255" {
+		t.Errorf("must be full speed, manual: enable=%s pwm=%s", read(chip, "pwm1_enable"), read(chip, "pwm1"))
 	}
 	if err := f.Save(context.Background(), store.FanSettings{Mode: "curve", PWM: "hwmon9/pwm1", MinPercent: 30, LowTemp: 35, HighTemp: 45}); err == nil {
 		t.Error("unknown output accepted")
@@ -154,5 +156,98 @@ func TestFanSafety(t *testing.T) {
 	AllFansFull(root)
 	if read(filepath.Join(root, "class", "hwmon", "hwmon2"), "pwm1") != "255" {
 		t.Error("AllFansFull must set manual outputs to 255")
+	}
+}
+
+// A simulated fan: stops below 30% once turning, needs 40% to start from
+// standstill; pwm2 has a speed input but nothing on it.
+func simulatedFans(root string) func(id string) int {
+	running := map[string]bool{}
+	return func(id string) int {
+		chip := filepath.Join(root, "class", "hwmon", "hwmon2")
+		if id != "hwmon2/pwm1" {
+			return 0
+		}
+		v, _ := strconv.Atoi(read(chip, "pwm1"))
+		pct := (v*100 + 127) / 255 // what nasd meant (it writes pct*255/100)
+		switch {
+		case pct >= 40 || (running[id] && pct >= 30):
+			running[id] = true
+			return 30 * pct
+		default:
+			running[id] = false
+			return 0
+		}
+	}
+}
+
+func TestFanCalibration(t *testing.T) {
+	root := fakeHwmon(t, "40000")
+	chip := filepath.Join(root, "class", "hwmon", "hwmon2")
+	for f, v := range map[string]string{"pwm2": "0", "pwm2_enable": "2", "fan2_input": "0"} {
+		os.WriteFile(filepath.Join(chip, f), []byte(v+"\n"), 0o644)
+	}
+	f := newFan(t, root, `{"smart_status":{"passed":true},"temperature":{"current":30}}`)
+	f.ReadRPM, f.Settle = simulatedFans(root), time.Millisecond
+	ctx := context.Background()
+	for _, id := range []string{"hwmon2/pwm1", "hwmon2/pwm2"} {
+		if err := f.Calibrate(ctx, id, t.Logf); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cal := f.Store.Read().Fan.Calib
+	if c := cal["hwmon2/pwm1"]; !c.HasFan || c.StallPercent != 20 || c.MinPercent != 40 || c.MaxRPM != 3000 {
+		t.Errorf("pwm1: %+v (stalls at 20%%, restarts only from 40%%)", c)
+	}
+	if c := cal["hwmon2/pwm2"]; c.HasFan {
+		t.Errorf("pwm2 drives nothing: %+v", c)
+	}
+	// The output without a fan can't be chosen; the minimum is enforced.
+	if err := f.Save(ctx, store.FanSettings{Mode: "curve", PWM: "hwmon2/pwm2", MinPercent: 50, LowTemp: 35, HighTemp: 45}); err == nil {
+		t.Error("an output without a fan was accepted")
+	}
+	if err := f.Save(ctx, store.FanSettings{Mode: "curve", PWM: "hwmon2/pwm1", MinPercent: 30, LowTemp: 35, HighTemp: 45}); err == nil {
+		t.Error("a minimum below the measured 40% was accepted")
+	}
+	if err := f.Save(ctx, store.FanSettings{Mode: "fixed", PWM: "hwmon2/pwm1", FixedPercent: 40}); err != nil {
+		t.Fatal(err)
+	}
+	if read(chip, "pwm1") != "102" { // 40% of 255
+		t.Errorf("fixed 40%%: pwm=%s", read(chip, "pwm1"))
+	}
+}
+
+// The controlled fan reads 0 RPM while it should turn: full speed, its
+// minimum goes up, an alert is sent.
+func TestFanStallProtection(t *testing.T) {
+	root := fakeHwmon(t, "40000")
+	chip := filepath.Join(root, "class", "hwmon", "hwmon2")
+	f := newFan(t, root, `{"smart_status":{"passed":true},"temperature":{"current":30}}`)
+	alerts := make(chan string, 4)
+	f.Notify = func(kind, subject, body string) { alerts <- kind }
+	ctx := context.Background()
+	if err := f.Save(ctx, store.FanSettings{Mode: "fixed", PWM: "hwmon2/pwm1", FixedPercent: 30}); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(chip, "fan1_input"), []byte("0\n"), 0o644) // it stalls
+	f.Tick(ctx)                                                           // 1st tick at 0 RPM: wait
+	if read(chip, "pwm1") == "255" {
+		t.Fatal("one reading at 0 RPM is not yet a stall")
+	}
+	f.Tick(ctx) // 2nd: stall
+	if read(chip, "pwm1") != "255" {
+		t.Errorf("stalled fan must go to full speed, pwm=%s", read(chip, "pwm1"))
+	}
+	select {
+	case k := <-alerts:
+		if k != "fan_stall" {
+			t.Errorf("alert %s", k)
+		}
+	case <-time.After(time.Second):
+		t.Error("no alert")
+	}
+	time.Sleep(50 * time.Millisecond) // the state update runs in the background
+	if c := f.Store.Read().Fan.Calib["hwmon2/pwm1"]; c.MinPercent != 40 {
+		t.Errorf("minimum must rise from 30 to 40%%: %+v", c)
 	}
 }

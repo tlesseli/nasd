@@ -59,6 +59,7 @@ var Kinds = []Kind{
 	{"admin_reset", "The admin password was reset at the NAS", "warning", true},
 	{"events_cleared", "Events and logs were cleared", "info", false},
 	{"ssh_keys", "Administrator SSH keys changed", "warning", true},
+	{"fan_stall", "A fan stopped at low speed", "warning", true},
 }
 
 // Severity of an event kind ("critical", "warning" or "info").

@@ -145,6 +145,7 @@ func main() {
 	mon.Sys = *hwmon
 	fan := hardware.NewFan(st, dk)
 	fan.Root = *hwmon
+	fan.Notify = al.Notify
 	btn := hardware.NewButton(st, bk, jm)
 	btn.Notify = al.Notify
 	sc := sysconf.NewService(st, jm)
