@@ -530,7 +530,6 @@
  "No backup jobs yet: create them on the Backups page.": "Nog geen back-uptaken: maak ze aan op de pagina Back-ups.",
  "No backup jobs yet.": "Nog geen back-uptaken.",
  "No cable": "Geen kabel",
- "No controllable fan found. Normal in a virtual machine; on the ReadyNAS the sensor chip's driver must be loaded (milestone 6).": "Geen regelbare ventilator gevonden. Normaal in een virtuele machine; op de ReadyNAS moet de driver van de sensorchip geladen zijn (mijlpaal 6).",
  "No events yet.": "Nog geen gebeurtenissen.",
  "no filesystem": "geen bestandssysteem",
  "No formatted USB disk is plugged in. Plug one into the NAS (or format it below the job list).": "Er is geen geformatteerde USB-schijf aangesloten. Sluit er een aan op de NAS (of formatteer hem onder de takenlijst).",
@@ -909,5 +908,6 @@
  "Workgroup": "Werkgroep",
  "Write": "Schrijven",
  "Write · peak {rate}": "Schrijven · piek {rate}",
- "Writing requires it.": "Schrijven vereist er een."
+ "Writing requires it.": "Schrijven vereist er een.",
+ "No controllable fan found. Normal in a virtual machine; on the ReadyNAS the sensor chip's driver must be loaded.": "Geen regelbare ventilator gevonden. Normaal in een virtuele machine; op de ReadyNAS moet de driver van de sensorchip geladen zijn."
 }

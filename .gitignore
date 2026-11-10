@@ -21,3 +21,5 @@ image/*.img
 *.ko
 *readynas-flash*
 **/rdx/
+release/
+announce/

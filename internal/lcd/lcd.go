@@ -333,7 +333,16 @@ func routineScreens(s Snapshot, now time.Time) []screen {
 		}
 		out = append(out, screen{strings.TrimSpace(l1), l2})
 	}
-	out = append(out, screen{fmt.Sprintf("Up %d days", int(s.Uptime.Hours()/24)), now.Format("15:04  Mon 2 Jan")})
+	// Both lines fit 16 characters: "Up 3 days" / "21:07 Tue 10 Nov".
+	days := int(s.Uptime.Hours() / 24)
+	up := fmt.Sprintf("Up %d days", days)
+	switch {
+	case days == 1:
+		up = "Up 1 day"
+	case days == 0:
+		up = fmt.Sprintf("Up %dh%02d", int(s.Uptime.Hours()), int(s.Uptime.Minutes())%60)
+	}
+	out = append(out, screen{up, now.Format("15:04 Mon 2 Jan")})
 	if s.PowerOff != "" {
 		out = append(out, screen{"Off at " + s.PowerOff, "On at " + s.PowerOn})
 	}

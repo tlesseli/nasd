@@ -209,7 +209,7 @@
       {/if}
       <div class="actions"><button onclick={() => post('/api/fan', { ...fan, minPercent: +fan.minPercent, lowTemp: +fan.lowTemp, highTemp: +fan.highTemp, fixedPercent: +fan.fixedPercent }, t('Fan settings saved.'))}>{t('Save')}</button></div>
     {:else}
-      <p class="muted small">{t("No controllable fan found. Normal in a virtual machine; on the ReadyNAS the sensor chip's driver must be loaded (milestone 6).")}</p>
+      <p class="muted small">{t("No controllable fan found. Normal in a virtual machine; on the ReadyNAS the sensor chip's driver must be loaded.")}</p>
     {/if}
   </div>
 {/if}

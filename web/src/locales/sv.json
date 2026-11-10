@@ -530,7 +530,6 @@
  "No backup jobs yet: create them on the Backups page.": "Inga backup-jobb ännu: skapa dem på sidan Säkerhetskopior.",
  "No backup jobs yet.": "Inga backup-jobb ännu.",
  "No cable": "Ingen kabel",
- "No controllable fan found. Normal in a virtual machine; on the ReadyNAS the sensor chip's driver must be loaded (milestone 6).": "Ingen styrbar fläkt hittades. Normalt i en virtuell maskin; på ReadyNAS måste drivrutinen för sensorkretsen vara inläst (milstolpe 6).",
  "No events yet.": "Inga händelser ännu.",
  "no filesystem": "inget filsystem",
  "No formatted USB disk is plugged in. Plug one into the NAS (or format it below the job list).": "Ingen formaterad USB-disk är ansluten. Anslut en till NAS:en (eller formatera den under jobblistan).",
@@ -909,5 +908,6 @@
  "Workgroup": "Arbetsgrupp",
  "Write": "Skriv",
  "Write · peak {rate}": "Skriv · topp {rate}",
- "Writing requires it.": "Skrivning kräver det."
+ "Writing requires it.": "Skrivning kräver det.",
+ "No controllable fan found. Normal in a virtual machine; on the ReadyNAS the sensor chip's driver must be loaded.": "Ingen styrbar fläkt hittades. Normalt i en virtuell maskin; på ReadyNAS måste drivrutinen för sensorkretsen vara inläst."
 }

@@ -530,7 +530,6 @@
  "No backup jobs yet: create them on the Backups page.": "Nicio sarcină de copiere de rezervă încă: creați-le pe pagina Copii de rezervă.",
  "No backup jobs yet.": "Nicio sarcină de copiere de rezervă încă.",
  "No cable": "Fără cablu",
- "No controllable fan found. Normal in a virtual machine; on the ReadyNAS the sensor chip's driver must be loaded (milestone 6).": "Niciun ventilator controlabil găsit. Normal într-o mașină virtuală; pe ReadyNAS trebuie încărcat driverul cipului senzorului (etapa 6).",
  "No events yet.": "Niciun eveniment încă.",
  "no filesystem": "fără sistem de fișiere",
  "No formatted USB disk is plugged in. Plug one into the NAS (or format it below the job list).": "Niciun disc USB formatat nu este conectat. Conectați unul la NAS (sau formatați-l sub lista de sarcini).",
@@ -909,5 +908,6 @@
  "Workgroup": "Grup de lucru",
  "Write": "Scriere",
  "Write · peak {rate}": "Scriere · vârf {rate}",
- "Writing requires it.": "Scrierea o necesită."
+ "Writing requires it.": "Scrierea o necesită.",
+ "No controllable fan found. Normal in a virtual machine; on the ReadyNAS the sensor chip's driver must be loaded.": "Niciun ventilator controlabil găsit. Normal într-o mașină virtuală; pe ReadyNAS trebuie încărcat driverul cipului senzorului."
 }

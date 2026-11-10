@@ -530,7 +530,6 @@
  "No backup jobs yet: create them on the Backups page.": "Ancora nessun job di backup: creali nella pagina Backup.",
  "No backup jobs yet.": "Ancora nessun job di backup.",
  "No cable": "Nessun cavo",
- "No controllable fan found. Normal in a virtual machine; on the ReadyNAS the sensor chip's driver must be loaded (milestone 6).": "Nessuna ventola controllabile trovata. Normale in una macchina virtuale; sul ReadyNAS deve essere caricato il driver del chip dei sensori (milestone 6).",
  "No events yet.": "Ancora nessun evento.",
  "no filesystem": "nessun filesystem",
  "No formatted USB disk is plugged in. Plug one into the NAS (or format it below the job list).": "Nessun disco USB formattato è collegato. Collegane uno al NAS (oppure formattalo sotto l'elenco dei job).",
@@ -909,5 +908,6 @@
  "Workgroup": "Gruppo di lavoro",
  "Write": "Scrittura",
  "Write · peak {rate}": "Scrittura · picco {rate}",
- "Writing requires it.": "Necessario per la scrittura."
+ "Writing requires it.": "Necessario per la scrittura.",
+ "No controllable fan found. Normal in a virtual machine; on the ReadyNAS the sensor chip's driver must be loaded.": "Nessuna ventola controllabile trovata. Normale in una macchina virtuale; sul ReadyNAS deve essere caricato il driver del chip dei sensori."
 }

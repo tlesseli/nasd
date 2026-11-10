@@ -530,7 +530,6 @@
  "No backup jobs yet: create them on the Backups page.": "Ingen backupjob endnu: opret dem på siden Sikkerhedskopier.",
  "No backup jobs yet.": "Ingen backupjob endnu.",
  "No cable": "Intet kabel",
- "No controllable fan found. Normal in a virtual machine; on the ReadyNAS the sensor chip's driver must be loaded (milestone 6).": "Ingen styrbar blæser fundet. Normalt i en virtuel maskine; på ReadyNAS skal sensorchippens driver være indlæst (milepæl 6).",
  "No events yet.": "Ingen hændelser endnu.",
  "no filesystem": "intet filsystem",
  "No formatted USB disk is plugged in. Plug one into the NAS (or format it below the job list).": "Der er ingen formateret USB-disk tilsluttet. Sæt en i NAS'en (eller formatér den under joblisten).",
@@ -909,5 +908,6 @@
  "Workgroup": "Arbejdsgruppe",
  "Write": "Skriv",
  "Write · peak {rate}": "Skriv · top {rate}",
- "Writing requires it.": "Kræves for at skrive."
+ "Writing requires it.": "Kræves for at skrive.",
+ "No controllable fan found. Normal in a virtual machine; on the ReadyNAS the sensor chip's driver must be loaded.": "Ingen styrbar blæser fundet. Normalt i en virtuel maskine; på ReadyNAS skal sensorchippens driver være indlæst."
 }

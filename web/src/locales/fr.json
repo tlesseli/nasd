@@ -530,7 +530,6 @@
  "No backup jobs yet: create them on the Backups page.": "Aucune tâche de sauvegarde pour l’instant : créez-les sur la page Sauvegardes.",
  "No backup jobs yet.": "Aucune tâche de sauvegarde pour l’instant.",
  "No cable": "Pas de câble",
- "No controllable fan found. Normal in a virtual machine; on the ReadyNAS the sensor chip's driver must be loaded (milestone 6).": "Aucun ventilateur pilotable trouvé. Normal dans une machine virtuelle ; sur le ReadyNAS, le pilote de la puce de capteurs doit être chargé (étape 6).",
  "No events yet.": "Aucun événement pour l’instant.",
  "no filesystem": "aucun système de fichiers",
  "No formatted USB disk is plugged in. Plug one into the NAS (or format it below the job list).": "Aucun disque USB formaté n’est branché. Branchez-en un sur le NAS (ou formatez-le sous la liste des tâches).",
@@ -909,5 +908,6 @@
  "Workgroup": "Groupe de travail",
  "Write": "Écriture",
  "Write · peak {rate}": "Écriture · pic {rate}",
- "Writing requires it.": "Requis pour l’écriture."
+ "Writing requires it.": "Requis pour l’écriture.",
+ "No controllable fan found. Normal in a virtual machine; on the ReadyNAS the sensor chip's driver must be loaded.": "Aucun ventilateur pilotable trouvé. Normal dans une machine virtuelle ; sur le ReadyNAS, le pilote de la puce de capteurs doit être chargé."
 }
