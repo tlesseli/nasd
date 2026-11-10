@@ -52,6 +52,32 @@ func TestParseSmart(t *testing.T) {
 	}
 }
 
+func TestParseSelfTests(t *testing.T) {
+	// A long test running (60% left), after an extended test that failed
+	// on a read error and older short tests.
+	h := parseSmart([]byte(`{"smart_status":{"passed":true},
+	  "ata_smart_data":{"self_test":{"status":{"value":246},"polling_minutes":{"short":1,"extended":222}}},
+	  "ata_smart_self_test_log":{"standard":{"table":[
+	    {"type":{"value":2},"status":{"value":249,"string":"Self-test routine in progress"},"lifetime_hours":900},
+	    {"type":{"value":1},"status":{"value":0,"string":"Completed without error"},"lifetime_hours":800},
+	    {"type":{"value":2},"status":{"value":121,"string":"Completed: read failure"},"lifetime_hours":700},
+	    {"type":{"value":2},"status":{"value":0,"string":"Completed without error"},"lifetime_hours":600}]}}}`))
+	st := h.SelfTest
+	if st == nil || !st.Running || st.RemainingPct != 60 || st.LongMinutes != 222 {
+		t.Fatalf("%+v", st)
+	}
+	if l := st.LastLong; l == nil || l.Hours != 700 || l.Passed || !l.Failed {
+		t.Errorf("last long test: %+v", l)
+	}
+
+	// Aborted by the host: neither passed nor failed.
+	h = parseSmart([]byte(`{"smart_status":{"passed":true},"ata_smart_self_test_log":{"standard":{"table":[
+	    {"type":{"value":2},"status":{"value":16,"string":"Aborted by host"},"lifetime_hours":50}]}}}`))
+	if l := h.SelfTest.LastLong; l == nil || l.Passed || l.Failed || h.SelfTest.Running {
+		t.Errorf("aborted: %+v", h.SelfTest)
+	}
+}
+
 func TestHealthIsCached(t *testing.T) {
 	calls := 0
 	s := NewService(func(ctx context.Context, name string, args ...string) ([]byte, error) {

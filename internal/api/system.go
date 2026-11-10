@@ -14,6 +14,7 @@ package api
 //	GET  /api/updates           -> sysconf.UpdatesInfo
 //	POST /api/updates/check     -> 202 job
 //	POST /api/updates/install   -> 202 job
+//	POST /api/updates/auto      store.UpdateSettings (automatic security updates)
 
 import (
 	"context"
@@ -39,6 +40,7 @@ func (s *Server) systemRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /api/updates", s.requireLogin(s.getUpdates))
 	mux.Handle("POST /api/updates/check", s.requireLogin(s.checkUpdates))
 	mux.Handle("POST /api/updates/install", s.requireLogin(s.installUpdates))
+	mux.Handle("POST /api/updates/auto", s.requireLogin(s.setAutoUpdates))
 }
 
 func (s *Server) getPower(w http.ResponseWriter, r *http.Request) {
@@ -147,4 +149,11 @@ func (s *Server) installUpdates(w http.ResponseWriter, r *http.Request) {
 	s.startJob(w, "Install updates", 2*time.Hour, func(ctx context.Context, j *jobs.Job) error {
 		return s.System.InstallUpdates(ctx, j.Run)
 	})
+}
+
+func (s *Server) setAutoUpdates(w http.ResponseWriter, r *http.Request) {
+	var req store.UpdateSettings
+	if readJSON(w, r, &req) {
+		result(w, s.System.SaveAutoUpdates(req))
+	}
 }

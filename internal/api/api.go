@@ -30,6 +30,7 @@ import (
 	"readynas/internal/alerts"
 	"readynas/internal/auth"
 	"readynas/internal/backups"
+	"readynas/internal/confbackup"
 	"readynas/internal/disks"
 	"readynas/internal/hardware"
 	"readynas/internal/jobs"
@@ -59,28 +60,29 @@ type Server struct {
 	SetupCode   string
 	OnSetupDone func()
 
-	Store    *store.Store
-	Disks    *disks.Service
-	Volumes  *volumes.Service
-	Jobs     *jobs.Manager
-	Shares   *shares.Service
-	Backups  *backups.Service
-	Alerts   *alerts.Service
-	Monitor  *monitor.Monitor
-	Power    *power.Service
-	System   *sysconf.Service
-	Button   *hardware.Button
-	Fan      *hardware.Fan
-	Locator  *hardware.Locator
-	LCD      *lcd.Engine
-	Metrics  *metrics.Sampler
-	Version  string
-	failed   failedLogins
-	Run      run.Func // for read-only commands (smartctl -x, journalctl)
-	Sys      string   // "/sys"
-	Sessions *auth.Sessions
-	Throttle *auth.Throttle
-	UI       fs.FS // built Svelte app (web/dist)
+	Store      *store.Store
+	Disks      *disks.Service
+	Volumes    *volumes.Service
+	Jobs       *jobs.Manager
+	Shares     *shares.Service
+	Backups    *backups.Service
+	ConfBackup *confbackup.Service
+	Alerts     *alerts.Service
+	Monitor    *monitor.Monitor
+	Power      *power.Service
+	System     *sysconf.Service
+	Button     *hardware.Button
+	Fan        *hardware.Fan
+	Locator    *hardware.Locator
+	LCD        *lcd.Engine
+	Metrics    *metrics.Sampler
+	Version    string
+	failed     failedLogins
+	Run        run.Func // for read-only commands (smartctl -x, journalctl)
+	Sys        string   // "/sys"
+	Sessions   *auth.Sessions
+	Throttle   *auth.Throttle
+	UI         fs.FS // built Svelte app (web/dist)
 }
 
 func (s *Server) Handler() http.Handler {
@@ -103,6 +105,7 @@ func (s *Server) Handler() http.Handler {
 	s.users2Routes(mux)
 	s.hardwareRoutes(mux)
 	s.overviewRoutes(mux)
+	s.settingsBackupRoutes(mux)
 	mux.Handle("GET /api/lcd", s.requireLogin(s.getLCD))
 	mux.Handle("POST /api/lcd", s.requireLogin(s.setLCD))
 	mux.Handle("POST /api/lcd/wake", s.requireLogin(s.wakeLCD))

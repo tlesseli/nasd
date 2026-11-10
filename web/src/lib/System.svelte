@@ -6,6 +6,7 @@
   import GeneralSettings from './GeneralSettings.svelte'
   import Icon from '../ui/Icon.svelte'
   import Updates from './Updates.svelte'
+  import SettingsBackup from './SettingsBackup.svelte'
   import HardwareSettings from './HardwareSettings.svelte'
   import ServicesSettings from './ServicesSettings.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
@@ -18,7 +19,7 @@
   const sections = [
     ['general', N_('General'), 'server'], ['network', N_('Network'), 'network'], ['services', N_('Services'), 'folder'],
     ['alerts', N_('Alerts'), 'bell'], ['power', N_('Power & UPS'), 'power'], ['hardware', N_('Hardware'), 'drive'],
-    ['updates', N_('Software update'), 'refresh'], ['events', N_('Events & logs'), 'file'], ['restart', N_('Restart / shut down'), 'power'],
+    ['updates', N_('Software update'), 'refresh'], ['settings', N_('Settings backup'), 'archive'], ['events', N_('Events & logs'), 'file'], ['restart', N_('Restart / shut down'), 'power'],
     ['about', N_('About'), 'info'],
   ]
   let dialog = $state(null)
@@ -272,6 +273,7 @@
     </section>
   {/if}
   {#if tab === 'updates'}<Updates />{/if}
+  {#if tab === 'settings'}<SettingsBackup />{/if}
   {#if tab === 'hardware'}<HardwareSettings />{/if}
 
   {#if tab === 'about'}<About {hostname} />{/if}

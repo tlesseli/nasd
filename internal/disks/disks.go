@@ -49,6 +49,29 @@ type Health struct {
 	Uncorrectable int64  `json:"uncorrectableSectors"` // SMART 198
 	Error         string `json:"error,omitempty"`
 	Standby       bool   `json:"standby"` // asleep (spun down): values are from before
+	// SelfTest: the disk's own tests (smartctl -t). Nil if not reported.
+	SelfTest *SelfTest `json:"selfTest,omitempty"`
+}
+
+// SelfTest is the state of a disk's SMART self-tests.
+type SelfTest struct {
+	Running      bool `json:"running"`
+	RemainingPct int  `json:"remainingPct"` // while running
+	// LongMinutes: how long the disk says an extended test takes.
+	LongMinutes int `json:"longMinutes"`
+	// LastLong: the newest extended ("long", "surface") test in the disk's
+	// log, nil if it never ran one.
+	LastLong *TestResult `json:"lastLong,omitempty"`
+}
+
+// TestResult is one entry of the disk's self-test log.
+type TestResult struct {
+	Status string `json:"status"` // smartctl's words, e.g. "Completed without error"
+	Passed bool   `json:"passed"`
+	// Failed: the test found a problem (read, electrical, servo failure...).
+	// A test that was interrupted or aborted is neither passed nor failed.
+	Failed bool `json:"failed"`
+	Hours  int  `json:"hours"` // disk power-on hours when it ended
 }
 
 // Runner executes a command and returns its stdout. Tests replace it with
@@ -115,14 +138,23 @@ func (s *Service) assignBays(list []Disk) {
 	}
 }
 
-// SelfTest starts SMART's short self-test (about 2 minutes, run by the disk
-// itself; the result appears in the SMART report).
-func (s *Service) SelfTest(ctx context.Context, name string) error {
+// SelfTest starts a SMART self-test, run by the disk itself while it keeps
+// working: "short" (about 2 minutes) or "long" (the whole surface: hours).
+// The result appears in the SMART report and in Health.SelfTest.
+func (s *Service) SelfTest(ctx context.Context, name, kind string) error {
 	if !regexp.MustCompile(`^(sd[a-z]+|nvme[0-9]+n[0-9]+)$`).MatchString(name) {
 		return fmt.Errorf("invalid disk name")
 	}
-	_, err := s.run(ctx, "smartctl", "-t", "short", "/dev/"+name)
-	return err
+	if kind != "short" && kind != "long" {
+		return fmt.Errorf("test must be short or long")
+	}
+	if _, err := s.run(ctx, "smartctl", "-t", kind, "/dev/"+name); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	delete(s.healthAt, "/dev/"+name) // show "testing" at once
+	s.mu.Unlock()
+	return nil
 }
 
 // ---- lsblk ----
@@ -256,7 +288,7 @@ func (s *Service) healthOf(ctx context.Context, path string) *Health {
 	// reasons, so we ignore it and trust the JSON instead.
 	// -n standby: if the disk is asleep, don't spin it up just to read
 	// its health (that would defeat spin-down). Keep the last values.
-	out, _ := s.run(ctx, "smartctl", "--json=c", "-n", "standby", "-i", "-H", "-A", path)
+	out, _ := s.run(ctx, "smartctl", "--json=c", "-n", "standby", "-i", "-H", "-A", "-c", "-l", "selftest", path)
 	var h *Health
 	if strings.Contains(string(out), "STANDBY mode") {
 		s.mu.Lock()
@@ -299,6 +331,30 @@ func parseSmart(data []byte) *Health {
 		PowerOnTime struct {
 			Hours int `json:"hours"`
 		} `json:"power_on_time"`
+		ATASmartData struct {
+			SelfTest struct {
+				Status *struct {
+					Value int `json:"value"`
+				} `json:"status"`
+				PollingMinutes struct {
+					Extended int `json:"extended"`
+				} `json:"polling_minutes"`
+			} `json:"self_test"`
+		} `json:"ata_smart_data"`
+		ATASelfTestLog struct {
+			Standard struct {
+				Table []struct {
+					Type struct {
+						Value int `json:"value"`
+					} `json:"type"`
+					Status struct {
+						Value  int    `json:"value"`
+						String string `json:"string"`
+					} `json:"status"`
+					LifetimeHours int `json:"lifetime_hours"`
+				} `json:"table"`
+			} `json:"standard"`
+		} `json:"ata_smart_self_test_log"`
 		ATAAttributes struct {
 			Table []struct {
 				ID  int `json:"id"`
@@ -330,6 +386,27 @@ func parseSmart(data []byte) *Health {
 		}
 		if h.Error == "" {
 			h.Error = "SMART not supported by this device"
+		}
+	}
+	// Self-tests (ATA). The status byte: high nibble 0 = passed, 1-2 =
+	// aborted or interrupted, 3-8 = a failure, 15 = running (low nibble:
+	// tenths remaining). Type 2 (offline) or 130 (captive) = extended.
+	st := doc.ATASmartData.SelfTest
+	if st.Status != nil || len(doc.ATASelfTestLog.Standard.Table) > 0 {
+		h.SelfTest = &SelfTest{LongMinutes: st.PollingMinutes.Extended}
+		if st.Status != nil && st.Status.Value>>4 == 15 {
+			h.SelfTest.Running, h.SelfTest.RemainingPct = true, (st.Status.Value&15)*10
+		}
+		for _, e := range doc.ATASelfTestLog.Standard.Table { // newest first
+			if e.Type.Value&0x7f != 2 {
+				continue
+			}
+			code := e.Status.Value >> 4
+			if code == 15 {
+				continue // the one running now
+			}
+			h.SelfTest.LastLong = &TestResult{Status: e.Status.String, Passed: code == 0, Failed: code >= 3 && code <= 8, Hours: e.LifetimeHours}
+			break
 		}
 	}
 	for _, a := range doc.ATAAttributes.Table {

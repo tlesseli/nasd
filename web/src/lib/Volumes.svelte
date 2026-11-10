@@ -6,6 +6,7 @@
   import ConfirmDialog from './ConfirmDialog.svelte'
   import VolumeMaintenance from './VolumeMaintenance.svelte'
   import TextDialog from './TextDialog.svelte'
+  import DiskTests from './DiskTests.svelte'
   import Icon from '../ui/Icon.svelte'
   import { t, N_ } from '../i18n.svelte.js'
 
@@ -66,8 +67,12 @@
       if (what === 'locate') await api.post(`/api/disks/${d.name}/locate`, { seconds: 60 })
       if (what === 'unlocate') await api.post(`/api/disks/${d.name}/locate/stop`)
       if (what === 'selftest') {
-        await api.post(`/api/disks/${d.name}/selftest`)
+        await api.post(`/api/disks/${d.name}/selftest`, { kind: 'short' })
         notice = t('SMART short test started on {disk}: about 2 minutes, run by the disk itself. The result shows in its SMART report.', { disk: d.name })
+      }
+      if (what === 'longtest') {
+        await api.post(`/api/disks/${d.name}/selftest`, { kind: 'long' })
+        notice = t('Surface test started on {disk}: it runs inside the disk for a few hours. You get an event when every disk has finished.', { disk: d.name })
       }
       if (what === 'smart') {
         smart = { title: t('SMART report: {disk} ({model})', { disk: d.name, model: d.model }), text: t('Loading…') }
@@ -222,6 +227,11 @@
   }
   const physical = $derived([...disks].filter((d) => d.role !== 'usb')
     .sort((a, b) => (a.bay || 99) - (b.bay || 99) || a.name.localeCompare(b.name)))
+  function lastLongText(d) {
+    const l = d.health?.selfTest?.lastLong
+    if (!l) return t('SMART extended test (hours). Never run on this disk.')
+    return t('SMART extended test (hours). Last one: {status}, at {h} power-on hours.', { status: l.status, h: l.hours.toLocaleString() })
+  }
   function health(d) {
     const h = d.health
     if (d.role === 'system') return { cls: 'neutral', text: t('System disk') }
@@ -230,6 +240,7 @@
     if (!h.passed) return { cls: 'bad', text: t('Failing') }
     const bad = h.reallocatedSectors + h.pendingSectors + h.uncorrectableSectors
     if (bad > 0) return { cls: 'warn', text: t('{n} bad sectors', { n: bad }) }
+    if (h.selfTest?.lastLong?.failed) return { cls: 'bad', text: t('Surface test failed') }
     return { cls: 'good', text: t('Passed') }
   }
 </script>
@@ -333,7 +344,8 @@
                 <td>{d.health?.temperatureC ? `${d.health.temperatureC} °C` : '—'}</td>
                 <td class="opt">{d.health?.powerOnHours ? `${d.health.powerOnHours.toLocaleString()} h` : '—'}</td>
                 <td><span class="badge {h.cls}">{h.text}</span>
-                  {#if locating.includes(d.name)}<span class="badge info blink">{t('Blinking')}</span>{/if}</td>
+                  {#if locating.includes(d.name)}<span class="badge info blink">{t('Blinking')}</span>{/if}
+                  {#if d.health?.selfTest?.running}<span class="badge info">{t('Testing {pct}%', { pct: 100 - d.health.selfTest.remainingPct })}</span>{/if}</td>
                 <td class="right row-actions">
                   {#if d.role === 'data'}
                     {#if locating.includes(d.name)}
@@ -345,6 +357,7 @@
                   {#if d.health?.supported}
                     <button class="link" onclick={() => diskAction(d, 'smart')}>SMART</button>
                     <button class="link" onclick={() => diskAction(d, 'selftest')} title={t('SMART short self-test (2 min)')}>{t('Test')}</button>
+                    {#if d.role === 'data' && !d.health.selfTest?.running}<button class="link" onclick={() => diskAction(d, 'longtest')} title={lastLongText(d)}>{t('Surface test')}</button>{/if}
                   {/if}
                   {#if dirty}<button class="link danger-text" onclick={() => askErase(d)} disabled={busy}>{t('Erase')}</button>{/if}
                 </td>
@@ -352,6 +365,7 @@
             {/each}
           </tbody>
         </table>
+        <DiskTests longMinutes={Math.max(0, ...physical.map((d) => d.health?.selfTest?.longMinutes ?? 0))} />
         {#if dirtyDisks.length}
           <p class="hint table-note">{t('“Old data”: partitions or RAID signatures from a previous life (e.g. the original ReadyNAS OS). Erase them to use the disk.')}</p>
         {/if}

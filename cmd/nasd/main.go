@@ -23,6 +23,7 @@ import (
 	"readynas/internal/api"
 	"readynas/internal/auth"
 	"readynas/internal/backups"
+	"readynas/internal/confbackup"
 	"readynas/internal/disks"
 	"readynas/internal/hardware"
 	"readynas/internal/jobs"
@@ -151,6 +152,39 @@ func main() {
 	sc := sysconf.NewService(st, jm)
 	sc.Notify = al.Notify
 	sc.ResumePending() // a network change not confirmed before a restart still rolls back
+	if err := sc.ApplyAutoUpdates(); err != nil {
+		log.Printf("warning: applying automatic update settings: %v", err)
+	}
+	mon.Updates = sc
+
+	// Settings backup: nightly encrypted copies on a data volume, restore.
+	cb := confbackup.NewService(st, version)
+	cb.Notify = al.Notify
+	cb.Mounts = func(ctx context.Context) (map[string]string, error) {
+		list, err := vols.List(ctx)
+		m := map[string]string{}
+		for _, v := range list {
+			if v.Managed && v.System == "" && v.Mountpoint != "" {
+				m[v.Name] = v.Mountpoint
+			}
+		}
+		return m, err
+	}
+	cb.Reapply = func(ctx context.Context) error {
+		errs := []error{shr.Apply(ctx), shr.ApplyQuotas(ctx), pw.Apply(ctx), sc.ApplyAutoUpdates()}
+		if h := st.Read().Settings.HomeShares; h.Enabled {
+			errs = append(errs, shr.SetHomeShares(ctx, true, h.Volume)) // creates missing home folders
+		}
+		return errors.Join(errs...)
+	}
+	cb.SetHostname = sc.SetHostname
+	cb.SetTimezone = func(ctx context.Context, tz string) error {
+		cur, err := sc.Time(ctx)
+		if err != nil {
+			return err
+		}
+		return sc.SetTime(ctx, sysconf.TimeRequest{Timezone: tz, NTP: cur.NTP, NTPServers: cur.NTPServers})
+	}
 	afterBootCheck(st, vols, al)
 
 	loc := hardware.NewLocator()
@@ -174,27 +208,28 @@ func main() {
 	}
 
 	srv := &api.Server{
-		Store:    st,
-		Disks:    dk,
-		Alerts:   al,
-		Monitor:  mon,
-		Power:    pw,
-		System:   sc,
-		Run:      run.Exec,
-		Sys:      *hwmon,
-		Button:   btn,
-		Fan:      fan,
-		Locator:  loc,
-		LCD:      display,
-		Metrics:  ms,
-		Version:  version,
-		Volumes:  vols,
-		Shares:   shr,
-		Jobs:     jm,
-		Backups:  bk,
-		Sessions: auth.NewSessions(30 * time.Minute),
-		Throttle: auth.NewThrottle(5, 10*time.Minute),
-		UI:       web.Dist(),
+		Store:      st,
+		Disks:      dk,
+		Alerts:     al,
+		Monitor:    mon,
+		Power:      pw,
+		System:     sc,
+		Run:        run.Exec,
+		Sys:        *hwmon,
+		Button:     btn,
+		Fan:        fan,
+		Locator:    loc,
+		LCD:        display,
+		Metrics:    ms,
+		Version:    version,
+		Volumes:    vols,
+		Shares:     shr,
+		Jobs:       jm,
+		Backups:    bk,
+		ConfBackup: cb,
+		Sessions:   auth.NewSessions(30 * time.Minute),
+		Throttle:   auth.NewThrottle(5, 10*time.Minute),
+		UI:         web.Dist(),
 	}
 	httpSrv := &http.Server{
 		Addr:              *listen,
@@ -219,6 +254,7 @@ func main() {
 	}
 	defer stop()
 	go bk.RunScheduler(ctx)
+	go cb.RunNightly(ctx)
 	go mon.Run(ctx)
 	go pw.RunTimer(ctx)
 	go bk.RunUSBWatcher(ctx)

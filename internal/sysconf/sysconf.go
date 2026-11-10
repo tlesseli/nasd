@@ -33,6 +33,10 @@ type Service struct {
 	RestartSelf func()
 	// ConfirmWindow is how long a network change waits for confirmation.
 	ConfirmWindow time.Duration
+	// Automatic updates (tests set them; empty = the system's paths).
+	AptConfDir         string // /etc/apt/apt.conf.d
+	UnattendedLog      string // /var/log/unattended-upgrades/unattended-upgrades.log
+	RebootRequiredFile string // /run/reboot-required
 
 	mu       sync.Mutex
 	rollback *time.Timer
@@ -242,8 +246,12 @@ type Update struct {
 }
 
 type UpdatesInfo struct {
-	Updates        []Update `json:"updates"`
-	RebootRequired bool     `json:"rebootRequired"`
+	Updates        []Update             `json:"updates"`
+	RebootRequired bool                 `json:"rebootRequired"`
+	RebootPackages []string             `json:"rebootPackages"`
+	Auto           store.UpdateSettings `json:"auto"`
+	LastAutoRun    time.Time            `json:"lastAutoRun,omitzero"`
+	AutoRuns       []AutoRun            `json:"autoRuns"` // newest first, up to 5
 }
 
 var aptLineRe = regexp.MustCompile(`^([^/\s]+)/\S+\s+(\S+)\s+\S+\s+\[upgradable from: ([^\]]+)\]`)
@@ -260,8 +268,14 @@ func (s *Service) Updates(ctx context.Context) (UpdatesInfo, error) {
 			info.Updates = append(info.Updates, Update{Package: m[1], To: m[2], From: m[3]})
 		}
 	}
-	_, err = os.Stat("/run/reboot-required")
-	info.RebootRequired = err == nil
+	info.RebootRequired, info.RebootPackages = s.RebootRequired()
+	info.Auto = s.Store.Read().Updates
+	var runs []AutoRun
+	info.LastAutoRun, runs = s.AutoRuns()
+	info.AutoRuns = []AutoRun{}
+	for i := len(runs) - 1; i >= 0 && len(info.AutoRuns) < 5; i-- {
+		info.AutoRuns = append(info.AutoRuns, runs[i])
+	}
 	return info, nil
 }
 

@@ -143,9 +143,10 @@ type BackupTarget struct {
 }
 
 type Schedule struct {
-	Kind    string `json:"kind"`    // "" (manual), "hourly", "daily", "weekly"
-	Weekday int    `json:"weekday"` // 0 = Sunday (weekly)
-	Hour    int    `json:"hour"`    // daily, weekly
+	Kind    string `json:"kind"`          // "" (manual), "hourly", "daily", "weekly", "monthly"
+	Weekday int    `json:"weekday"`       // 0 = Sunday (weekly)
+	Day     int    `json:"day,omitempty"` // 1-28 (monthly)
+	Hour    int    `json:"hour"`          // daily, weekly, monthly
 	Minute  int    `json:"minute"`
 }
 
@@ -161,6 +162,8 @@ func (s Schedule) Due(t time.Time) bool {
 		return t.Hour() == s.Hour
 	case "weekly":
 		return t.Hour() == s.Hour && int(t.Weekday()) == s.Weekday
+	case "monthly":
+		return t.Hour() == s.Hour && t.Day() == s.Day
 	}
 	return false
 }
@@ -206,6 +209,41 @@ type Maintenance struct {
 	// Last finished check (or repair) and what it found.
 	LastCheck    time.Time `json:"lastCheck,omitzero"`
 	LastMismatch int64     `json:"lastMismatch"`
+}
+
+// DiskTests: scheduled SMART extended self-tests ("surface tests"). Each
+// disk reads its whole surface by itself; the NAS stays usable.
+type DiskTests struct {
+	Schedule Schedule `json:"schedule"` // Kind "" (none), "weekly" or "monthly"
+	// Reported: per disk serial, the power-on hour of the newest extended
+	// test whose result was already reported (each result is told once).
+	Reported map[string]int `json:"reported,omitempty"`
+}
+
+// UpdateSettings: Debian's automatic security updates (unattended-upgrades).
+// "Disabled": the zero value keeps them on, as Debian ships them.
+type UpdateSettings struct {
+	AutoDisabled bool `json:"autoDisabled"`
+	// AutoReboot: restart at RebootHour:RebootMinute when an installed
+	// update needs it (usually a new kernel).
+	AutoReboot   bool `json:"autoReboot"`
+	RebootHour   int  `json:"rebootHour"`
+	RebootMinute int  `json:"rebootMinute"`
+	// LastReported: the newest unattended-upgrades run already reported.
+	LastReported time.Time `json:"lastReported,omitzero"`
+}
+
+// ConfigBackup: encrypted copies of the settings (this state, the user
+// accounts' password hashes, SSH keys...), kept on a data volume every
+// night so a reinstalled system can get them back.
+type ConfigBackup struct {
+	// Passphrase encrypts every copy (nightly and downloaded). Never sent
+	// to the browser; needed to restore.
+	Passphrase string    `json:"passphrase,omitempty"`
+	Nightly    bool      `json:"nightly"`
+	Volume     string    `json:"volume"` // where nightly copies go ("" = the first data volume)
+	LastCopy   time.Time `json:"lastCopy,omitzero"`
+	LastError  string    `json:"lastError,omitempty"`
 }
 
 // PowerSettings: saving energy and surviving power cuts.
@@ -313,6 +351,9 @@ type State struct {
 	Button         ButtonSettings         `json:"button"`
 	Fan            FanSettings            `json:"fan"`
 	LCD            LCDSettings            `json:"lcd"`
+	DiskTests      DiskTests              `json:"diskTests"`
+	Updates        UpdateSettings         `json:"updates"`
+	ConfigBackup   ConfigBackup           `json:"configBackup"`
 }
 
 func (s *State) FindBackup(id int) *BackupJob {
@@ -430,6 +471,8 @@ func clone(st State) State {
 	out.Events = slices.Clone(st.Events)
 	out.Maintenance = maps.Clone(st.Maintenance)
 	out.Button.Jobs = slices.Clone(st.Button.Jobs)
+	out.DiskTests.Reported = maps.Clone(st.DiskTests.Reported)
+	out.Fan.Calib = maps.Clone(st.Fan.Calib)
 	out.Network.Interfaces = slices.Clone(st.Network.Interfaces)
 	out.Network.DNS = slices.Clone(st.Network.DNS)
 	if st.NetworkPending != nil {

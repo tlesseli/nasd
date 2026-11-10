@@ -23,6 +23,7 @@ import (
 	"readynas/internal/health"
 	"readynas/internal/power"
 	"readynas/internal/store"
+	"readynas/internal/sysconf"
 	"readynas/internal/volumes"
 )
 
@@ -31,8 +32,9 @@ type Monitor struct {
 	Volumes *volumes.Service
 	Disks   *disks.Service
 	Alerts  *alerts.Service
-	Power   *power.Service // optional
-	Sys     string         // "/sys"
+	Power   *power.Service   // optional
+	Updates *sysconf.Service // optional: automatic updates, restart needed
+	Sys     string           // "/sys"
 	Now     func() time.Time
 
 	mu         sync.Mutex         // Tick (monitor goroutine) vs MarkStarted (HTTP handlers)
@@ -41,6 +43,9 @@ type Monitor struct {
 	lastFired  map[string]time.Time
 	fanSeen    map[string]bool // fans seen spinning (a fan at 0 RPM from the start may just be unplugged)
 	upsFails   int             // consecutive rounds without an answer from the UPS
+	// testsPassed: disks whose surface test passed, told in one event once
+	// no disk is testing any more.
+	testsPassed []string
 }
 
 func New(st *store.Store, v *volumes.Service, d *disks.Service, a *alerts.Service) *Monitor {
@@ -127,6 +132,7 @@ func (m *Monitor) Tick(ctx context.Context) {
 	if err != nil {
 		log.Printf("monitor: %v", err)
 	}
+	m.checkSelfTests(list, st, cond)
 	for _, d := range list {
 		h := d.Health
 		if h == nil || !h.Supported {
@@ -170,6 +176,9 @@ func (m *Monitor) Tick(ctx context.Context) {
 	if m.Power != nil {
 		m.checkUPS(ctx, cond)
 	}
+	if m.Updates != nil {
+		m.checkUpdates(st, cond)
+	}
 
 	// Conditions that are no longer true.
 	for key, p := range m.active {
@@ -182,6 +191,94 @@ func (m *Monitor) Tick(ctx context.Context) {
 	}
 
 	m.runSchedules(ctx, st, vols)
+	m.runDiskTests(ctx, st, vols, list)
+}
+
+// diskLabel: "Bay 2 (sdb)", or the device name for a disk outside the bays.
+func diskLabel(d disks.Disk) string {
+	if d.Bay > 0 {
+		return fmt.Sprintf("Bay %d (%s)", d.Bay, d.Name)
+	}
+	return d.Name
+}
+
+// checkSelfTests reports the result of each disk's newest extended SMART
+// test once, whoever started it. A failed one stays a problem until a later
+// test passes; passed ones are told together when every test has ended.
+func (m *Monitor) checkSelfTests(list []disks.Disk, st store.State, cond func(string, string, string, string)) {
+	seen := map[string]int{}
+	running := false
+	for _, d := range list {
+		h := d.Health
+		if h == nil || h.SelfTest == nil || d.Serial == "" {
+			continue
+		}
+		t := h.SelfTest
+		running = running || t.Running
+		last, known := st.DiskTests.Reported[d.Serial]
+		switch {
+		case t.LastLong == nil:
+			if !known {
+				seen[d.Serial] = -1 // never tested: its first test will be new
+			}
+		case !known:
+			seen[d.Serial] = t.LastLong.Hours // from before nasd watched: not news
+		case t.LastLong.Hours > last:
+			seen[d.Serial] = t.LastLong.Hours
+			if t.LastLong.Passed {
+				m.testsPassed = append(m.testsPassed, diskLabel(d))
+			}
+		}
+		if t.LastLong != nil && t.LastLong.Failed {
+			cond("disk_test_failed:"+d.Serial, "disk_test_failed", "Disk "+diskLabel(d)+" failed its surface test",
+				fmt.Sprintf("The SMART extended test of disk %s (%s %s) ended with: %s. The disk can't read part of its surface: back up your data and replace it.",
+					diskLabel(d), d.Model, d.Serial, t.LastLong.Status))
+		}
+	}
+	if len(seen) > 0 {
+		m.Store.Update(func(st *store.State) error {
+			if st.DiskTests.Reported == nil {
+				st.DiskTests.Reported = map[string]int{}
+			}
+			for serial, hours := range seen {
+				st.DiskTests.Reported[serial] = hours
+			}
+			return nil
+		})
+	}
+	if !running && len(m.testsPassed) > 0 {
+		sort.Strings(m.testsPassed)
+		m.Alerts.Notify("disk_test_done", "Surface test passed: "+strings.Join(m.testsPassed, ", "),
+			"The SMART extended test read the whole surface of these disks without finding a problem.")
+		m.testsPassed = nil
+	}
+}
+
+// runDiskTests starts the scheduled surface tests: every internal disk
+// tests itself at once (they run inside the disks, in parallel). Not while
+// a volume rebuilds or reshapes: that needs every disk at full speed.
+func (m *Monitor) runDiskTests(ctx context.Context, st store.State, vols []volumes.Volume, list []disks.Disk) {
+	now := m.Now().Truncate(time.Minute)
+	if !st.DiskTests.Schedule.Due(now) || m.lastFired["disktests"].Equal(now) {
+		return
+	}
+	m.lastFired["disktests"] = now
+	for _, v := range vols {
+		if v.Status == "rebuilding" || v.Status == "reshaping" {
+			log.Printf("scheduled disk tests skipped: volume %s is %s", v.Name, v.Status)
+			return
+		}
+	}
+	for _, d := range list {
+		if d.Role == "usb" || d.Health == nil || !d.Health.Supported || (d.Health.SelfTest != nil && d.Health.SelfTest.Running) {
+			continue
+		}
+		if err := m.Disks.SelfTest(ctx, d.Name, "long"); err != nil {
+			log.Printf("scheduled surface test of %s not started: %v", d.Name, err)
+			continue
+		}
+		log.Printf("scheduled surface test of %s started", d.Name)
+	}
 }
 
 func (m *Monitor) checkVolume(ctx context.Context, v volumes.Volume, st store.State, cond func(string, string, string, string), fullPct int) {
@@ -311,6 +408,26 @@ func (m *Monitor) checkUPS(ctx context.Context, cond func(string, string, string
 		cond("ups_on_battery", "ups_on_battery", "Power cut: the NAS runs on its UPS",
 			fmt.Sprintf("Battery at %d%%, about %d minutes left. The NAS will shut down by itself if the battery runs low.", u.Charge, u.RuntimeSec/60))
 	}
+}
+
+// checkUpdates reports what the automatic updates installed, and keeps a
+// "restart needed" problem while an update waits for one.
+func (m *Monitor) checkUpdates(st store.State, cond func(string, string, string, string)) {
+	m.Updates.CheckAutoUpdates()
+	need, pkgs := m.Updates.RebootRequired()
+	if !need {
+		return
+	}
+	body := "An installed update takes effect after a restart"
+	if len(pkgs) > 0 {
+		body += " (" + strings.Join(pkgs, ", ") + ")"
+	}
+	if u := st.Updates; u.AutoReboot && !u.AutoDisabled {
+		body += fmt.Sprintf(". The NAS restarts by itself at %02d:%02d.", u.RebootHour, u.RebootMinute)
+	} else {
+		body += ". Restart the NAS when convenient (System > Restart)."
+	}
+	cond("reboot_required", "reboot_required", "A restart is needed to finish an update", body)
 }
 
 func missingDisks(v volumes.Volume) int {

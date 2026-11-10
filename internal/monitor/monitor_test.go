@@ -142,3 +142,42 @@ func TestScheduledCheckAndDiskAlerts(t *testing.T) {
 		}
 	}
 }
+
+func TestSurfaceTestReportedOnce(t *testing.T) {
+	e := setup(t)
+	var problems []string
+	cond := func(key, kind, subject, body string) { problems = append(problems, kind) }
+	disk := func(serial string, bay int, st *disks.SelfTest) disks.Disk {
+		return disks.Disk{Name: "sd" + string(rune('a'+bay-1)), Serial: serial, Bay: bay, Health: &disks.Health{Supported: true, Passed: true, SelfTest: st}}
+	}
+	check := func(list ...disks.Disk) {
+		problems = nil
+		e.m.checkSelfTests(list, e.m.Store.Read(), cond)
+	}
+
+	// First look: an old test of disk 1 and a never-tested disk 2 are not news.
+	check(disk("S1", 1, &disks.SelfTest{LastLong: &disks.TestResult{Passed: true, Hours: 100}}),
+		disk("S2", 2, &disks.SelfTest{}))
+	if ev := e.events(); len(ev) != 0 {
+		t.Fatalf("nothing new: %v", ev)
+	}
+	// Disk 1 finished a new test, disk 2 is still testing: wait for it.
+	check(disk("S1", 1, &disks.SelfTest{LastLong: &disks.TestResult{Passed: true, Hours: 200}}),
+		disk("S2", 2, &disks.SelfTest{Running: true}))
+	if ev := e.events(); len(ev) != 0 {
+		t.Fatalf("disk 2 still testing: %v", ev)
+	}
+	// Disk 2 finished: one event for both.
+	final := []disks.Disk{disk("S1", 1, &disks.SelfTest{LastLong: &disks.TestResult{Passed: true, Hours: 200}}),
+		disk("S2", 2, &disks.SelfTest{LastLong: &disks.TestResult{Passed: true, Hours: 50}})}
+	check(final...)
+	check(final...)
+	if ev := e.events(); len(ev) != 1 || ev[0] != "disk_test_done: Surface test passed: Bay 1 (sda), Bay 2 (sdb)" {
+		t.Fatalf("one event expected: %v", ev)
+	}
+	// A failed test is a problem for as long as it is the newest.
+	check(disk("S1", 1, &disks.SelfTest{LastLong: &disks.TestResult{Failed: true, Status: "Completed: read failure", Hours: 300}}))
+	if len(problems) != 1 || problems[0] != "disk_test_failed" {
+		t.Fatalf("problems: %v", problems)
+	}
+}
