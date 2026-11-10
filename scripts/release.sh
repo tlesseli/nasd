@@ -32,7 +32,8 @@ for p in json.load(sys.stdin)["partitiontable"]["partitions"]:
 FS="image/nas-dist.raw?offset=$((START * 512))"
 ls_in() { debugfs -R "ls -l $1" "$FS" 2>/dev/null; }
 fail=0
-ls_in /home/nas/.ssh | grep -q authorized_keys && { echo "!! an authorized_keys file is in the image"; fail=1; }
+# (cloud-init leaves an empty authorized_keys: only key lines matter)
+debugfs -R "cat /home/nas/.ssh/authorized_keys" "$FS" 2>/dev/null | grep -q '^[a-z].* AAAA' && { echo "!! an SSH key is in the image"; fail=1; }
 ls_in /etc/ssh | grep -q 'ssh_host_.*key' && { echo "!! SSH host keys are in the image"; fail=1; }
 ls_in /var/lib | grep -qw nasd && { echo "!! nasd data (/var/lib/nasd) is in the image"; fail=1; }
 debugfs -R "cat /etc/shadow" "$FS" 2>/dev/null | awk -F: '$1=="nas" && $2 !~ /^[!*]/ {exit 1}' || { echo "!! the nas account has a password"; fail=1; }
