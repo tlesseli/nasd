@@ -915,5 +915,7 @@
  "Workgroup": "Gruppo di lavoro",
  "Write": "Scrittura",
  "Write · peak {rate}": "Scrittura · picco {rate}",
- "Writing requires it.": "Necessario per la scrittura."
+ "Writing requires it.": "Necessario per la scrittura.",
+ "Forgot the password?": "Password dimenticata?",
+ "With a paperclip, hold the Reset button at the back of the NAS for 5 seconds: a new password appears on the front display.": "Con una graffetta, tieni premuto per 5 secondi il pulsante Reset sul retro del NAS: una nuova password appare sul display frontale."
 }

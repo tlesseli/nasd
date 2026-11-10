@@ -1,6 +1,6 @@
 package api
 
-// Lost admin password: holding the NAS's Backup button sets a new random
+// Lost admin password: holding the NAS's Reset button (at the back) sets a new random
 // one and shows it on the front display (see cmd/nasd/panel.go). nasd only
 // keeps a hash of passwords, so the old one can't be shown: it is replaced.
 
@@ -39,10 +39,10 @@ func (s *Server) ResetAdminPassword() (string, error) {
 	if s.Throttle != nil {
 		s.Throttle.ResetAll()
 	}
-	log.Printf("admin password reset with the Backup button")
+	log.Printf("admin password reset with the Reset button")
 	if s.Alerts != nil {
 		s.Alerts.Notify("admin_reset", "The admin password was reset at the NAS",
-			"Someone held the Backup button on the NAS for 10 seconds: the admin password was replaced by a new one, shown on the front display. "+
+			"Someone held the Reset button at the back of the NAS for 5 seconds: the admin password was replaced by a new one, shown on the front display. "+
 				"If it wasn't you, someone has physical access to your NAS.")
 	}
 	return pw, nil

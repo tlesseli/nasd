@@ -6,10 +6,13 @@
 //   - all of them are general-purpose pins of the ICH9 chipset, controlled
 //     through its GPIO registers in I/O space (GPIOBASE, from the LPC
 //     bridge's PCI config, offset 0x48),
-//   - LEDs (bank 1): disk1..4 on pins 22, 28, 16, 20; two more on 6 and 7.
+//   - LEDs (bank 1): Backup button 22, Power button 28, disk1..4 on 16, 20,
+//     6, 7 (checked on the hardware: Netgear's table lists the two button
+//     LEDs first).
 //     A LED is lit when its pin is low; the chipset can blink it by itself
 //     (GPO_BLINK register),
-//   - buttons (bank 1, inputs): pins 4 and 5,
+//   - buttons (bank 1, inputs, low when pressed): Backup on pin 4, the
+//     recessed Reset button at the back on pin 5 (checked on the hardware),
 //   - display (bank 2 = pins 32..63): an HD44780-compatible LCD in 4-bit
 //     mode. E, RS, RW on pins 32, 33, 34, data D4..D7 on 36..39, backlight
 //     on 48.
@@ -37,9 +40,11 @@ const (
 
 // Pins (bank 1 bits for LEDs and buttons, bank 2 bits for the display).
 var (
-	BayLED     = map[int]int{1: 22, 2: 28, 3: 16, 4: 20}
-	ExtraLEDs  = []int{6, 7}
-	ButtonPins = []int{4, 5} // button0, button1
+	BayLED       = map[int]int{1: 16, 2: 20, 3: 6, 4: 7}
+	BackupLED    = 22
+	PowerLED     = 28
+	BackupButton = 4 // front, runs the backup jobs
+	ResetButton  = 5 // back, recessed: holding it resets the admin password
 )
 
 const (
@@ -55,6 +60,7 @@ const (
 //   - DMI: NETGEAR / ReadyNAS,
 //   - the LPC bridge is an Intel ICH9 (8086:2918), where the pins live,
 //   - the CPU is an Atom D410 (the Ultra 6 has a D510 and other pins).
+//
 // NASD_PANEL=off (environment) disables the panel whatever the machine.
 func Detect() (bool, string) {
 	if os.Getenv("NASD_PANEL") == "off" {

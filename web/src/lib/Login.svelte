@@ -62,6 +62,12 @@
     {/if}
     {#if error}<p class="error">{error}</p>{/if}
     <button type="submit" disabled={busy}>{busy ? t('Please wait…') : setup ? t('Create admin account') : t('Sign in')}</button>
+    {#if !setup}
+      <details class="forgot muted small">
+        <summary>{t('Forgot the password?')}</summary>
+        {t('With a paperclip, hold the Reset button at the back of the NAS for 5 seconds: a new password appears on the front display.')}
+      </details>
+    {/if}
     <LangPicker />
   </form>
   <footer><Copyright light /></footer>
@@ -79,4 +85,5 @@
   .login-page :global(.login .muted), .login-page :global(.login label) { color: #bcd0f0; }
   .login-page :global(.login input), .login-page :global(.login select) { background: rgb(4 8 22 / 0.65); color: #eef4ff; border-color: rgb(54 140 255 / 0.4); }
   footer { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; }
+  .forgot summary { cursor: pointer; }
 </style>

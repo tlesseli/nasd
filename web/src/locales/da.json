@@ -915,5 +915,7 @@
  "Workgroup": "Arbejdsgruppe",
  "Write": "Skriv",
  "Write · peak {rate}": "Skriv · top {rate}",
- "Writing requires it.": "Kræves for at skrive."
+ "Writing requires it.": "Kræves for at skrive.",
+ "Forgot the password?": "Glemt adgangskoden?",
+ "With a paperclip, hold the Reset button at the back of the NAS for 5 seconds: a new password appears on the front display.": "Hold Reset-knappen bag på NAS’en inde i 5 sekunder med en papirclips: en ny adgangskode vises på displayet foran."
 }

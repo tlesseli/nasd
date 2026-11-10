@@ -91,19 +91,24 @@ func wirePanel(ctx context.Context, p *readynas.Panel, dk *disks.Service, loc *h
 			}
 		}
 	}()
-	// The Backup button is a chipset pin. Holding it resets the admin
-	// password and shows the new one on the display: only someone standing
-	// at the NAS can do it, like the reset button of most NAS boxes.
-	btn.GPIO = func() bool { return p.Pressed(readynas.ButtonPins[0]) }
-	btn.OnHolding = func(left int) {
-		display.Notice("Keep holding to", fmt.Sprintf("reset admin: %2ds", left), 1500*time.Millisecond)
-	}
-	btn.OnLongPress = func() {
-		pw, err := srv.ResetAdminPassword()
-		if err != nil {
-			display.Notice("Reset failed:", err.Error(), time.Minute)
-			return
-		}
-		display.Notice("Admin password:", pw, 10*time.Minute)
-	}
+	// Both buttons are chipset pins. The Backup button runs the backup jobs.
+	// Holding the recessed Reset button at the back (a paperclip) resets the
+	// admin password and shows the new one on the display: only someone at
+	// the NAS can do it, like the reset button of most NAS boxes.
+	btn.GPIO = func() bool { return p.Pressed(readynas.BackupButton) }
+	go hardware.PinWatch{
+		Read: func() bool { return p.Pressed(readynas.ResetButton) },
+		Hold: hardware.HoldReset,
+		OnHolding: func(left int) {
+			display.Notice("Keep holding to", fmt.Sprintf("reset admin: %2ds", left), 1500*time.Millisecond)
+		},
+		OnLong: func() {
+			pw, err := srv.ResetAdminPassword()
+			if err != nil {
+				display.Notice("Reset failed:", err.Error(), time.Minute)
+				return
+			}
+			display.Notice("Admin password:", pw, 10*time.Minute)
+		},
+	}.Run(ctx)
 }

@@ -915,5 +915,7 @@
  "Workgroup": "Grup de lucru",
  "Write": "Scriere",
  "Write · peak {rate}": "Scriere · vârf {rate}",
- "Writing requires it.": "Scrierea o necesită."
+ "Writing requires it.": "Scrierea o necesită.",
+ "Forgot the password?": "Ați uitat parola?",
+ "With a paperclip, hold the Reset button at the back of the NAS for 5 seconds: a new password appears on the front display.": "Cu o agrafă, țineți apăsat butonul Reset din spatele NAS-ului timp de 5 secunde: pe afișajul frontal apare o parolă nouă."
 }

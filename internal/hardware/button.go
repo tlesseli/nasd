@@ -53,11 +53,8 @@ type Button struct {
 	OnPress func()
 	// GPIO, when set, reads the built-in button directly (true = pressed):
 	// the ReadyNAS's Backup button is a chipset pin, not an input device.
-	// Holding it HoldReset calls OnLongPress instead of running the jobs;
-	// OnHolding(seconds left) is called every second meanwhile.
-	GPIO        func() bool
-	OnLongPress func()
-	OnHolding   func(left int)
+	// Any press runs the jobs (holding it does nothing more).
+	GPIO func() bool
 
 	mu       sync.Mutex
 	cur      int // job being run (1-based) while running
@@ -74,56 +71,76 @@ func NewButton(st *store.Store, b *backups.Service, j *jobs.Manager) *Button {
 }
 
 // Run reads all input devices, rescanning every 30 s for new ones.
-// HoldReset: how long to hold the built-in button to reset the admin password.
-const HoldReset = 10 * time.Second
-
-// BuiltIn reports whether the button is read from the board (no setup).
+// BuiltIn: the board's own button is wired (ReadyNAS).
 func (b *Button) BuiltIn() bool { return b.GPIO != nil }
 
-// pollGPIO watches the built-in button: a short press runs the jobs (on
-// release), a long hold calls OnLongPress once.
+// HoldReset: how long to hold the Reset button to reset the admin password.
+const HoldReset = 5 * time.Second
+
+// pollGPIO watches the built-in button: each press runs the jobs.
 func (b *Button) pollGPIO(ctx context.Context) {
+	PinWatch{Read: b.GPIO, OnShort: func() { b.HandlePress(KeyPress{Device: builtInDevice}) }}.Run(ctx)
+}
+
+// PinWatch watches a button wired to a chipset pin, read every 50 ms.
+//   - A change counts once it reads the same twice in a row: the contacts
+//     bounce for a few milliseconds on each press.
+//   - Armed only once the button has been seen released: a pin that reads
+//     "pressed" from the start (stuck, or wired differently) never acts.
+//   - Released before Hold (or Hold zero): OnShort. Held Hold: OnLong, once,
+//     with OnHolding(seconds left) every second from the first second.
+type PinWatch struct {
+	Read      func() bool
+	Hold      time.Duration
+	OnShort   func()
+	OnHolding func(left int)
+	OnLong    func()
+}
+
+func (w PinWatch) Run(ctx context.Context) {
 	t := time.NewTicker(50 * time.Millisecond)
 	defer t.Stop()
 	var since time.Time
-	fired, lastLeft := false, -1
-	// Armed only once the pin has been seen released: a pin that reads
-	// "pressed" from the start (stuck, or wired differently) must never
-	// run jobs or reset the admin password.
-	armed := false
+	armed, fired, lastLeft := false, false, -1
+	prev := false
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
 		}
-		now := time.Now()
-		pressed := b.GPIO()
+		raw := w.Read()
+		if raw != prev {
+			prev = raw
+			continue // not settled yet
+		}
+		pressed := raw
 		if !armed {
 			armed = !pressed
 			continue
 		}
+		now := time.Now()
 		switch {
 		case pressed && since.IsZero():
 			since, fired, lastLeft = now, false, -1
-		case pressed && !fired:
+		case pressed && !fired && w.Hold > 0:
 			held := now.Sub(since)
-			if held >= HoldReset {
+			if held >= w.Hold {
 				fired = true
-				if b.OnLongPress != nil {
-					b.OnLongPress()
+				if w.OnLong != nil {
+					w.OnLong()
 				}
-			} else if left := int((HoldReset - held + time.Second - 1) / time.Second); held >= 2*time.Second && left != lastLeft {
+			} else if left := int((w.Hold - held + time.Second - 1) / time.Second); held >= time.Second && left != lastLeft {
 				lastLeft = left
-				if b.OnHolding != nil {
-					b.OnHolding(left)
+				if w.OnHolding != nil {
+					w.OnHolding(left)
 				}
 			}
 		case !pressed && !since.IsZero():
 			short := !fired
 			since = time.Time{}
-			if short {
-				b.HandlePress(KeyPress{Device: builtInDevice})
+			if short && w.OnShort != nil {
+				w.OnShort()
 			}
 		}
 	}

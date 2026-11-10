@@ -33,7 +33,8 @@ by `image/build.sh --dist`, the scripts in this repository).
 Out of scope: vulnerabilities in Debian packages (report them to Debian:
 https://www.debian.org/security/; nasd picks up their fixes through the
 system's updates), and attacks that need physical access to the NAS (by
-design, holding the Backup button resets the admin password).
+design, holding the recessed Reset button at the back resets the admin
+password).
 
 ## Security design, in short
 
