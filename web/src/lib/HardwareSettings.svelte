@@ -131,7 +131,7 @@
     <div class="add">
       {#if hw.buttonBuiltIn}
         <span class="small">{@html t('The <strong>Backup button</strong> on the front of the NAS is ready: a short press runs the jobs below.')}
-          <span class="muted">{t('Holding it 10 seconds instead resets the admin password: the new one appears on the front display (for when it is lost).')}</span></span>
+          <span class="muted">{t('A lost admin password is reset with the recessed Reset button at the back: hold it 5 seconds and the new one appears on the front display.')}</span></span>
       {:else if button.device}
         <span class="small">{t('Responds to key')} <strong>{button.code}</strong> {t('from')} <strong>{button.device}</strong></span>
       {:else}
