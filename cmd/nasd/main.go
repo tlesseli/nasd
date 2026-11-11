@@ -97,7 +97,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	cert, err := tlsutil.LoadOrCreate(*dataDir)
+	// HTTPS: a certificate signed by this NAS's own CA (see tlsutil),
+	// renewed by itself.
+	certs, err := tlsutil.Load(*dataDir)
 	if err != nil {
 		log.Fatalf("tls: %v", err)
 	}
@@ -157,6 +159,9 @@ func main() {
 		log.Printf("warning: applying automatic update settings: %v", err)
 	}
 	mon.Updates = sc
+	if err := sc.SecureResolver(context.Background()); err != nil {
+		log.Printf("warning: switching LLMNR off: %v", err)
+	}
 
 	// Firewall: put the kept rules (or none) in place at once; the
 	// network-following loop starts with the other background work.
@@ -230,6 +235,7 @@ func main() {
 		Fan:        fan,
 		Locator:    loc,
 		LCD:        display,
+		Certs:      certs,
 		Metrics:    ms,
 		Version:    version,
 		Volumes:    vols,
@@ -244,7 +250,7 @@ func main() {
 	httpSrv := &http.Server{
 		Addr:              *listen,
 		Handler:           srv.Handler(),
-		TLSConfig:         &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12},
+		TLSConfig:         &tls.Config{GetCertificate: certs.GetCertificate, MinVersion: tls.VersionTLS12},
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -267,6 +273,7 @@ func main() {
 	go cb.RunNightly(ctx)
 	go mon.Run(ctx)
 	go fw.Watch(ctx)
+	go certs.Watch(ctx, log.Printf)
 	go pw.RunTimer(ctx)
 	go bk.RunUSBWatcher(ctx)
 	go btn.Run(ctx)

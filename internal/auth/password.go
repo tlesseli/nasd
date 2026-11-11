@@ -14,9 +14,12 @@ import (
 )
 
 // Never store passwords, only a slow salted hash. PBKDF2 runs SHA-256 many
-// times so guessing is expensive. The iteration count is a trade-off with
-// the Atom D410: ~0.3 s per login on that CPU is acceptable.
-const iterations = 200_000
+// times so guessing is expensive. 600,000 is OWASP's recommendation for
+// PBKDF2-SHA256 (2023): about 4 s per login on the Atom D410, a cost
+// accepted for the admin account.
+// Hashes made with fewer iterations still work and are upgraded at the
+// next successful login (NeedsRehash).
+const iterations = 600_000
 
 var b64 = base64.RawStdEncoding
 
@@ -55,4 +58,15 @@ func CheckPassword(encoded, password string) bool {
 	}
 	// Constant-time comparison: a normal == leaks timing information.
 	return subtle.ConstantTimeCompare(got, want) == 1
+}
+
+// NeedsRehash tells whether a hash was made with weaker parameters than
+// HashPassword uses today.
+func NeedsRehash(encoded string) bool {
+	parts := strings.Split(encoded, "$")
+	if len(parts) != 4 || parts[0] != "pbkdf2-sha256" {
+		return true
+	}
+	iter, err := strconv.Atoi(parts[1])
+	return err != nil || iter < iterations
 }

@@ -100,5 +100,25 @@ func (s *Server) confirmAdmin(w http.ResponseWriter, r *http.Request, password s
 		writeError(w, http.StatusForbidden, "wrong admin password")
 		return false
 	}
+	s.upgradeHash(u.Name, u.PasswordHash, password)
 	return true
+}
+
+// upgradeHash re-hashes a password that was just checked, when its hash
+// was made with weaker parameters (an older nasd).
+func (s *Server) upgradeHash(name, hash, password string) {
+	if !auth.NeedsRehash(hash) {
+		return
+	}
+	newHash, err := auth.HashPassword(password)
+	if err != nil {
+		return
+	}
+	s.Store.Update(func(st *store.State) error {
+		if u := st.FindUser(name); u != nil && u.PasswordHash == hash {
+			u.PasswordHash = newHash
+		}
+		return nil
+	})
+	log.Printf("password hash of %s upgraded", name)
 }

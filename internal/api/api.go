@@ -44,6 +44,7 @@ import (
 	"readynas/internal/store"
 	"readynas/internal/sysconf"
 	"readynas/internal/system"
+	"readynas/internal/tlsutil"
 	"readynas/internal/volumes"
 )
 
@@ -73,6 +74,7 @@ type Server struct {
 	Power      *power.Service
 	System     *sysconf.Service
 	Firewall   *firewall.Service
+	Certs      *tlsutil.Manager
 	Button     *hardware.Button
 	Fan        *hardware.Fan
 	Locator    *hardware.Locator
@@ -109,6 +111,7 @@ func (s *Server) Handler() http.Handler {
 	s.overviewRoutes(mux)
 	s.settingsBackupRoutes(mux)
 	s.firewallRoutes(mux)
+	s.certificateRoutes(mux)
 	mux.Handle("GET /api/lcd", s.requireLogin(s.getLCD))
 	mux.Handle("POST /api/lcd", s.requireLogin(s.setLCD))
 	mux.Handle("POST /api/lcd/wake", s.requireLogin(s.wakeLCD))
@@ -213,6 +216,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "wrong username or password")
 		return
 	}
+	s.upgradeHash(u.Name, u.PasswordHash, req.Password)
 	s.Throttle.Reset(ip)
 	s.startSession(w, u.Name)
 	writeJSON(w, http.StatusOK, map[string]string{"username": u.Name})

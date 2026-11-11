@@ -2,6 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/pbkdf2"
+	"crypto/sha256"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -155,5 +158,26 @@ func TestSetupCode(t *testing.T) {
 	}
 	if w := do(h, "POST", "/api/setup", `{"password":"correct horse","code":" K7M2-X9QA "}`, ""); w.Code != 200 || !done {
 		t.Fatalf("right code (case and spaces ignored): %d %s, done=%v", w.Code, w.Body, done)
+	}
+}
+
+// A hash from an older nasd (fewer PBKDF2 rounds) is upgraded at login.
+func TestLoginUpgradesOldHash(t *testing.T) {
+	var st *store.Store
+	h := newTestServerWith(t, func(s *Server) { st = s.Store })
+	salt := []byte("0123456789abcdef")
+	key, _ := pbkdf2.Key(sha256.New, "correct horse", salt, 1000, 32)
+	old := "pbkdf2-sha256$1000$" + base64.RawStdEncoding.EncodeToString(salt) + "$" + base64.RawStdEncoding.EncodeToString(key)
+	st.Update(func(s *store.State) error {
+		s.Users = []store.User{{Name: "admin", Admin: true, PasswordHash: old}}
+		return nil
+	})
+	if w := do(h, "POST", "/api/login", `{"username":"admin","password":"correct horse"}`, ""); w.Code != 200 {
+		t.Fatalf("login with the old hash: %d %s", w.Code, w.Body)
+	}
+	cur := st.Read()
+	got := cur.FindUser("admin").PasswordHash
+	if got == old || auth.NeedsRehash(got) || !auth.CheckPassword(got, "correct horse") {
+		t.Errorf("hash not upgraded: %s", got)
 	}
 }

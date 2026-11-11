@@ -177,3 +177,21 @@ func TestUpdatesParsing(t *testing.T) {
 		t.Errorf("%v %+v", err, u)
 	}
 }
+
+func TestSecureResolver(t *testing.T) {
+	var cmds []string
+	s := &Service{ResolvedDropIn: filepath.Join(t.TempDir(), "resolved.conf.d", "nasd.conf"),
+		Run: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			cmds = append(cmds, name+" "+strings.Join(args, " "))
+			return nil, nil
+		}}
+	for range 2 {
+		if err := s.SecureResolver(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, _ := os.ReadFile(s.ResolvedDropIn)
+	if !strings.Contains(string(data), "LLMNR=no") || len(cmds) != 1 || cmds[0] != "systemctl try-restart systemd-resolved" {
+		t.Errorf("%s %v", data, cmds)
+	}
+}

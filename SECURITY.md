@@ -40,8 +40,19 @@ password).
 
 - **LAN only.** The NAS is not meant to be reachable from the internet; don't
   forward its ports.
-- **Web interface**: HTTPS (self-signed certificate per installation),
-  passwords hashed with PBKDF2, sessions expire after 30 minutes idle,
+- **Firewall** (System → Firewall, off until switched on): only private
+  networks, or only the NAS's own network, plus listed addresses, may connect;
+  everything else is dropped and logged. A change that would block the
+  computer making it is refused, a change must be confirmed within 2 minutes
+  or it is undone, and the Reset button at the back switches it off.
+- **HTTPS**: each installation makes its own certificate authority, limited by
+  name constraints to the NAS's own names and private addresses (it can't vouch
+  for any other site, even if its key leaked). Installed once on a computer
+  (System → HTTPS certificate), it removes the browser warning; its
+  fingerprint can be checked on the front display. The server certificate
+  renews itself.
+- **Web interface**: passwords hashed with PBKDF2-SHA256 (600,000 rounds;
+  older hashes are upgraded at the next sign-in), sessions expire after 30 minutes idle,
   5 failed sign-ins lock an address out for 10 minutes, requests are protected
   against cross-site forgery. Deleting shares or folders, clearing logs and
   changing SSH keys ask for the admin password again.
@@ -53,3 +64,11 @@ password).
 - **Secrets** (backup credentials, cloud archive keys) are never sent back to
   the browser and are passed to tools through standard input or the
   environment, never on command lines.
+- **Settings backups** are encrypted (AES-256-GCM, key derived from a
+  passphrase with PBKDF2-SHA256, 600,000 rounds) and kept in a folder only
+  root can read.
+- **Name lookup**: the NAS resolves names with DNS only (LLMNR is off), so a
+  device on the network can't answer in the DNS's place.
+- **Releases** are checked with govulncheck (known vulnerabilities in the Go
+  code and the Go version it is built with) and for secrets in the image
+  before they are published.

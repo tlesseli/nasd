@@ -21,6 +21,12 @@ TAG=v$VERSION
 OUT=release/$TAG
 rm -rf "$OUT" && mkdir -p "$OUT/flash"
 
+# Known vulnerabilities in the Go code or the Go version it is built with
+# (nasd only uses the standard library: a Go security release is the usual
+# fix). The release stops if one affects nasd.
+echo ">> checking for known vulnerabilities (govulncheck)"
+go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./... || { echo "release aborted: update Go or the code first"; exit 1; }
+
 echo ">> building the distributable image (~10 min)"
 image/build.sh --dist
 
@@ -68,6 +74,11 @@ cp image/build/flash/nas.krn image/build/flash/nas.ird image/build/flash/syslinu
 echo ">> compressing the image (xz)"
 xz -T0 -6 -c image/nas-dist.raw > "$OUT/nasd-$VERSION-readynas-ultra4.img.xz"
 
-(cd "$OUT" && find . -type f ! -name SHA256SUMS -printf '%P\n' | sort | xargs sha256sum > SHA256SUMS)
+# Plain file names: release pages list every file side by side (no flash/
+# folder), so "sha256sum -c SHA256SUMS --ignore-missing" in the download
+# folder checks them all.
+(cd "$OUT" && for f in $(find . -type f ! -name SHA256SUMS -printf '%P\n' | sort); do
+  (cd "$(dirname "$f")" && sha256sum "$(basename "$f")")
+done > SHA256SUMS)
 echo ">> done: $OUT"
 ls -lh "$OUT" "$OUT/flash"

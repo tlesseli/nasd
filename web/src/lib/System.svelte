@@ -4,6 +4,7 @@
   import PowerSettings from './PowerSettings.svelte'
   import NetworkSettings from './NetworkSettings.svelte'
   import Firewall from './Firewall.svelte'
+  import Certificate from './Certificate.svelte'
   import GeneralSettings from './GeneralSettings.svelte'
   import Icon from '../ui/Icon.svelte'
   import Updates from './Updates.svelte'
@@ -18,7 +19,7 @@
 
   // Sub-sections, each with its own URL (#/system/alerts...).
   const sections = [
-    ['general', N_('General'), 'server'], ['network', N_('Network'), 'network'], ['firewall', N_('Firewall'), 'shield'], ['services', N_('Services'), 'folder'],
+    ['general', N_('General'), 'server'], ['network', N_('Network'), 'network'], ['firewall', N_('Firewall'), 'shield'], ['certificate', N_('HTTPS certificate'), 'check'], ['services', N_('Services'), 'folder'],
     ['alerts', N_('Alerts'), 'bell'], ['power', N_('Power & UPS'), 'power'], ['hardware', N_('Hardware'), 'drive'],
     ['updates', N_('Software update'), 'refresh'], ['settings', N_('Settings backup'), 'archive'], ['events', N_('Events & logs'), 'file'], ['restart', N_('Restart / shut down'), 'power'],
     ['about', N_('About'), 'info'],
@@ -263,6 +264,7 @@
   {#if tab === 'power'}<PowerSettings />{/if}
   {#if tab === 'network'}<NetworkSettings />{/if}
   {#if tab === 'firewall'}<Firewall />{/if}
+  {#if tab === 'certificate'}<Certificate />{/if}
   {#if tab === 'general'}<GeneralSettings {hostname} />{/if}
   {#if tab === 'restart'}
     <section class="card danger-zone">
