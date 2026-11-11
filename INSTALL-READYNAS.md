@@ -12,7 +12,24 @@ Our system lives on a **USB SSD or USB stick** (≥ 16 GB). We add our kernel ne
 - a network cable from the NAS to your router or modem (DHCP)
 - this PC, and the NAS admin (= root) password
 
-## 1. Build and test the image (on the PC)
+## 1. Get the image (on the PC)
+
+### Download it (easiest)
+
+The ready-made image is on the releases page: **https://github.com/tlesseli/nasd/releases/latest**
+
+Download into one folder: `nasd-<version>-readynas-ultra4.img.xz`, `nas.krn`, `nas.ird`, `syslinux.cfg`, `nasd-<version>-source.tar.gz` (it holds the scripts used below) and `SHA256SUMS`. Then check and unpack:
+
+```
+sha256sum -c SHA256SUMS --ignore-missing      # every line must say OK
+tar xzf nasd-<version>-source.tar.gz && cd nasd-<version>
+xz -dc ../nasd-<version>-readynas-ultra4.img.xz > image/nas.raw
+mkdir -p image/build/flash && cp ../nas.krn ../nas.ird ../syslinux.cfg image/build/flash/
+```
+
+The downloaded image holds no key and no password: the web interface asks for a setup code shown on the front display, and you add your own SSH key there (step 7). You can also create a key now: `ssh-keygen -t ed25519 -f image/id_ed25519`. Then go on with step 2: the commands below work the same from this folder.
+
+### Or build it yourself
 
 ```
 vm/setup.sh          # once: downloads and verifies Debian 13 (if not done yet)
@@ -83,7 +100,7 @@ The new `syslinux.cfg` boots `NAS` by default and keeps every RAIDiator entry (N
 ## 7. Find it and sign in
 
 - Web interface: **https://<ip>:8443**: the IP is in the router/modem's DHCP table (`nas.local` works only when the PC is on the same network segment). Accept the certificate warning, then choose the **admin password**.
-- SSH: `ssh -i image/id_ed25519 nas@<ip>`
+- SSH: `ssh -i image/id_ed25519 nas@<ip>`. With the downloaded image, first add your public key in the web interface (System Settings → Services → Administrator SSH access: paste the content of `image/id_ed25519.pub`).
 - Updates of nasd from this PC: `make deploy NAS=nas@<ip>`
 
 Kernel updates keep working: a hook (`nas-flash-sync`) copies every new kernel and initramfs to the flash.
